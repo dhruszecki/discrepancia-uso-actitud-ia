@@ -1,7 +1,7 @@
 [project]
-name = "datamining-uba-taller-de-tesis-i"
-version = "1.0.0"
-description = "Discrepancia uso–actitud hacia la IA en desarrolladores de software (Stack Overflow Developer Survey 2023–2025)"
+name = "discrepancia-uso-actitud-ia"
+version = "0.1.0"
+description = "Discrepancia entre uso y actitud hacia la IA en desarrolladores de software (Stack Overflow Developer Survey 2023-2025)"
 readme = "README.md"
 requires-python = ">=3.11.13"
 dependencies = [
@@ -18,7 +18,3 @@ dependencies = [
     "tabulate>=0.10.0",
 ]
 
-[dependency-groups]
-dev = [
-    "jupytext>=1.19.3",
-]

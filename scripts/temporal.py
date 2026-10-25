@@ -1,14 +1,9 @@
-"""Análisis temporal (Capa A) — descriptivo por año sobre usuarios (80k).
+"""Tasa de discrepancia por año entre usuarios de IA.
 
-Estratifica los análisis H1 (seniority) y H2 (DevType) por año del survey
-sobre la subpoblación de usuarios activos de IA (df_clean_users.parquet, N≈80k),
-complementando el análisis pooled de eda.py y el estratificado sobre full de invarianza.py.
-
-Outputs:
-    outputs/08_temporal_tasa_base.png
-    outputs/08_temporal_H1_seniority.png
-    outputs/08_temporal_H2_devtype.png
-    resultados/resultados_temporal_usuarios.md
+Repite H1 (experiencia) y H2 (rol) por año de la encuesta sobre los usuarios de IA
+(df_clean_users.parquet, N = 80.369), como complemento del análisis conjunto de eda.py.
+Genera las figuras temporal_tasa_discrepancia.png, temporal_experiencia.png y
+temporal_rol.png, y el informe docs/analisis/resultados_temporal_usuarios.md.
 """
 from __future__ import annotations
 
@@ -23,19 +18,16 @@ import pandas as pd
 
 warnings.filterwarnings("ignore")
 
-# ============================================================
-# CONFIG
-# ============================================================
 TARGET_LABEL_0 = "Con discrepancia uso-actitud"
 COLOR_GLOBAL = "#1f2937"
 COLORS_YEAR = {2023: "#3b82f6", 2024: "#8b5cf6", 2025: "#f59e0b"}
-YEAR_EXCLUSIVE_NOTE = "* Categoría disponible en ola(s) específica(s) del survey solamente"
-# ============================================================
+YEAR_EXCLUSIVE_NOTE = "* Rol presente solo en algunas ediciones de la encuesta"
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_PATH = ROOT / "data" / "df_clean_users.parquet"
 OUTPUTS = ROOT / "outputs"
-DOCS = ROOT / "resultados"
+DOCS = ROOT / "docs" / "analisis"
+OUTPUTS.mkdir(parents=True, exist_ok=True)
 DOCS.mkdir(parents=True, exist_ok=True)
 
 
@@ -43,11 +35,16 @@ def cargar() -> pd.DataFrame:
     if not DATA_PATH.exists():
         raise FileNotFoundError(
             f"No se encontró {DATA_PATH}. "
-            "Correr primero: python scripts/pipeline.py"
+            "Hay que correr antes scripts/pipeline.py"
         )
     df = pd.read_parquet(DATA_PATH)
     df["discrepancia"] = 1 - df["target"]
     return df
+
+
+def _num(x: float, dec: int = 0) -> str:
+    """Formato argentino: punto de miles y coma decimal."""
+    return f"{x:,.{dec}f}".replace(",", "_").replace(".", ",").replace("_", ".")
 
 
 def tramo_experiencia(years: pd.Series) -> pd.Categorical:
@@ -57,7 +54,7 @@ def tramo_experiencia(years: pd.Series) -> pd.Categorical:
 
 
 def tasa_base_por_anio(df: pd.DataFrame) -> tuple[pd.DataFrame, plt.Figure]:
-    """Tasa base de discrepancia (target=0) por año del survey sobre usuarios."""
+    """Tasa de discrepancia por año de la encuesta."""
     grp = df.groupby("survey_year")["discrepancia"]
     tabla = pd.DataFrame({
         "tasa_pct": (grp.mean() * 100).round(1),
@@ -75,19 +72,19 @@ def tasa_base_por_anio(df: pd.DataFrame) -> tuple[pd.DataFrame, plt.Figure]:
 
     for i, (year, row) in enumerate(tabla.iterrows()):
         ax.text(i, row["tasa_pct"] + 0.4,
-                f"{row['tasa_pct']:.1f}%\n(N={row['n_total']:,})",
+                f"{_num(row['tasa_pct'], 1)} %\n(N = {_num(row['n_total'])})",
                 ha="center", va="bottom", fontsize=10)
 
     ax.axhline(tasa_global, color=COLOR_GLOBAL, linestyle="--", lw=1.5,
-               label=f"Pooled {tasa_global:.1f}%")
+               label=f"Tres años juntos: {_num(tasa_global, 1)} %")
 
     ax.set_xticks(x)
     ax.set_xticklabels([str(y) for y in years], fontsize=11)
-    ax.set_xlabel("Año del survey")
+    ax.set_xlabel("Año de la encuesta")
     ax.set_ylabel(f"% {TARGET_LABEL_0}")
     ax.set_ylim(0, tabla["tasa_pct"].max() * 1.4)
     ax.set_title(
-        f"Tasa base de discrepancia por año del survey\n(usuarios IA, N={len(df):,})"
+        f"Tasa de discrepancia por año de la encuesta\n(usuarios de IA, N = {_num(len(df))})"
     )
     ax.legend(loc="upper right", fontsize=9)
     ax.grid(axis="y", linestyle="--", alpha=0.3)
@@ -97,9 +94,9 @@ def tasa_base_por_anio(df: pd.DataFrame) -> tuple[pd.DataFrame, plt.Figure]:
 
 
 def h1_temporal_usuarios(df: pd.DataFrame) -> tuple[pd.DataFrame, plt.Figure]:
-    """H1 estratificado por año sobre usuarios — discrepancia por tramo de seniority."""
+    """H1 por año: discrepancia por tramo de experiencia."""
     df = df.copy()
-    df["exp_tramo"] = tramo_experiencia(df["YearsCodePro"])
+    df["exp_tramo"] = tramo_experiencia(df["YearsCode"])
 
     global_rate = (
         df.groupby("exp_tramo", observed=True)["discrepancia"]
@@ -118,15 +115,15 @@ def h1_temporal_usuarios(df: pd.DataFrame) -> tuple[pd.DataFrame, plt.Figure]:
     for col in tabla.columns:
         vals = tabla[col].dropna().values
         mono = all(vals[i] <= vals[i + 1] for i in range(len(vals) - 1))
-        marker = "✓" if mono else "✗"
-        gap = vals[-1] - vals[0]
-        print(f"  H1 {col}: monotónica {marker}  ({vals[0]:.1f}% → {vals[-1]:.1f}%, gap = {gap:+.1f} pp)")
+        estado = "creciente" if mono else "no creciente"
+        diferencia = vals[-1] - vals[0]
+        print(f"  H1 {col}: {estado} (de {vals[0]:.1f}% a {vals[-1]:.1f}%, diferencia {diferencia:+.1f} puntos)")
 
     fig, ax = plt.subplots(figsize=(9, 5))
     x = np.arange(len(tabla.index))
 
     ax.plot(x, tabla["global"], "--o", color=COLOR_GLOBAL, lw=2, ms=6,
-            label="Pooled (3 años)", zorder=5)
+            label="Tres años juntos", zorder=5)
     for year in [2023, 2024, 2025]:
         col = str(year)
         if col in tabla.columns:
@@ -134,10 +131,10 @@ def h1_temporal_usuarios(df: pd.DataFrame) -> tuple[pd.DataFrame, plt.Figure]:
 
     ax.set_xticks(x)
     ax.set_xticklabels(tabla.index)
-    ax.set_xlabel("Tramo de YearsCodePro (años)")
+    ax.set_xlabel("Años programando")
     ax.set_ylabel(f"% {TARGET_LABEL_0}")
     ax.set_ylim(0, tabla.max().max() * 1.25)
-    ax.set_title("H1 temporal — Discrepancia por seniority × año (usuarios IA)")
+    ax.set_title("Discrepancia según años programando, por año de la encuesta\n(usuarios de IA)")
     ax.legend(title="", loc="upper left", fontsize=9)
     ax.grid(linestyle="--", alpha=0.3)
     fig.tight_layout()
@@ -146,7 +143,7 @@ def h1_temporal_usuarios(df: pd.DataFrame) -> tuple[pd.DataFrame, plt.Figure]:
 
 
 def h2_temporal_usuarios(df: pd.DataFrame) -> tuple[pd.DataFrame, plt.Figure]:
-    """H2 estratificado por año sobre usuarios — discrepancia por DevType."""
+    """H2 por año: discrepancia por rol."""
     devtype_cols = [c for c in df.columns if c.startswith("DevType_")]
 
     rows = []
@@ -162,7 +159,8 @@ def h2_temporal_usuarios(df: pd.DataFrame) -> tuple[pd.DataFrame, plt.Figure]:
 
     tabla_long = pd.DataFrame(rows)
 
-    # Solo DevTypes con N≥100 en ≥2 años
+    # Para comparar entre años, solo quedan los roles con al menos 100 casos en
+    # dos ediciones o más.
     years_ok = tabla_long.groupby("devtype")["year"].count()
     devtypes_incluidos = years_ok[years_ok >= 2].index.tolist()
     tabla_long = tabla_long[tabla_long["devtype"].isin(devtypes_incluidos)]
@@ -172,7 +170,7 @@ def h2_temporal_usuarios(df: pd.DataFrame) -> tuple[pd.DataFrame, plt.Figure]:
     tabla["_avg"] = tabla.mean(axis=1)
     tabla = tabla.sort_values("_avg", ascending=True).drop(columns="_avg")
 
-    # DevTypes presentes en <3 años (pero que pasaron el filtro ≥2)
+    # Algunos roles no existen en las tres ediciones; se marcan con asterisco.
     year_exclusive = [dt for dt in tabla.index if years_ok.get(dt, 0) < 3]
     ytick_labels = [
         f"{dt[:38]}*" if dt in year_exclusive else dt[:42]
@@ -197,7 +195,7 @@ def h2_temporal_usuarios(df: pd.DataFrame) -> tuple[pd.DataFrame, plt.Figure]:
     ax.set_yticklabels(ytick_labels, fontsize=9)
     ax.set_xlabel(f"% {TARGET_LABEL_0}")
     ax.set_title(
-        f"H2 temporal — Discrepancia por DevType × año (usuarios IA, N={len(df):,})"
+        f"Discrepancia por rol y año de la encuesta (usuarios de IA, N = {_num(len(df))})"
     )
     ax.legend(title="Año", loc="lower right", fontsize=9)
     ax.grid(axis="x", linestyle="--", alpha=0.3)
@@ -216,49 +214,43 @@ def generar_lectura(
     tabla_h1: pd.DataFrame,
     tabla_h2: pd.DataFrame,
 ) -> str:
-    """Genera el documento markdown de lectura."""
+    """Arma el informe markdown con los resultados por año."""
     global_rate = df["discrepancia"].mean() * 100
     global_n = len(df)
 
     out = []
-    out.append("# Análisis temporal — Discrepancia uso-actitud sobre usuarios de IA\n\n")
-    out.append("**Dataset:** `data/df_clean_users.parquet`\n\n")
+    out.append("# Análisis temporal: discrepancia entre uso y actitud en usuarios de IA\n\n")
+    out.append("Datos: `data/df_clean_users.parquet`. Generado por `scripts/temporal.py`.\n\n")
     out.append(
-        f"**N total:** {global_n:,}  ·  "
-        f"**Tasa global de discrepancia (pooled):** {global_rate:.1f}%\n\n---\n\n"
+        f"N total: {global_n:,}. "
+        f"Tasa de discrepancia con los tres años juntos: {global_rate:.1f}%.\n\n"
     )
 
-    # 1. Tasa base
-    out.append("## 1. Tasa base de discrepancia por año del survey\n\n")
+    out.append("## 1. Tasa de discrepancia por año de la encuesta\n\n")
     out.append(tabla_base.to_markdown())
-    out.append("\n\n*(tasa_pct en %; n_total y n_disc en absolutos)*\n\n")
-    out.append("### Lectura\n\n")
+    out.append("\n\n*(tasa_pct en %; n_total y n_disc en cantidad de casos)*\n\n")
 
     tasas = tabla_base["tasa_pct"]
     min_year = int(tasas.idxmin())
     max_year = int(tasas.idxmax())
     delta = float(tasas.max() - tasas.min())
     out.append(
-        f"La tasa de discrepancia oscila entre **{tasas.min():.1f}% ({min_year})** "
-        f"y **{tasas.max():.1f}% ({max_year})**, un rango de {delta:.1f} pp. "
-        f"El pooled (3 años combinados) es {global_rate:.1f}%.\n\n"
+        f"La tasa de discrepancia va de {tasas.min():.1f}% ({min_year}) "
+        f"a {tasas.max():.1f}% ({max_year}), un rango de {delta:.1f} puntos. "
+        f"Con los tres años juntos es {global_rate:.1f}%.\n\n"
     )
     out.append(
-        "**Contraste con dataset completo (full, N≈155k, framing E2):** "
-        "En el full dataset la tasa de no-favorable fue del orden de 55–65% por año, "
-        "3–4× superior porque incluye a los no-usuarios (AISelect=No), "
-        "que por definición del target E2 son mayoritariamente no-favorables. "
-        "La subpoblación de usuarios reduce drásticamente la tasa base "
-        "y hace visible la brecha real: quienes usan IA pero declaran actitud no-favorable.\n\n"
+        "En el conjunto completo de desarrolladores (155k) la tasa de actitud no favorable "
+        "es de 55 a 65 % por año, porque incluye a los no usuarios. Entre usuarios de IA "
+        "la tasa es mucho menor y refleja solo a quienes usan IA sin declarar una actitud favorable.\n\n"
     )
 
-    # 2. H1
-    out.append("## 2. H1 — Discrepancia por seniority estratificada por año\n\n")
+    out.append("## 2. H1: discrepancia según experiencia, por año\n\n")
     out.append(tabla_h1.to_markdown())
     out.append(
-        "\n\n*(porcentajes; global = pooled 3 años; columnas = año del survey)*\n\n"
+        "\n\n*(porcentajes; global = los tres años juntos; las demás columnas son el año de la encuesta)*\n\n"
     )
-    out.append("### Lectura por columna\n\n")
+    out.append("Por columna:\n\n")
 
     for col in tabla_h1.columns:
         vals = tabla_h1[col].dropna().values
@@ -266,29 +258,23 @@ def generar_lectura(
             continue
         mono = all(vals[i] <= vals[i + 1] for i in range(len(vals) - 1))
         gap = vals[-1] - vals[0]
-        marker = "monotónica creciente" if mono else "**no monotónica**"
+        estado = "creciente en todos los tramos" if mono else "no creciente en todos los tramos"
         out.append(
-            f"- **{col}:** {marker} ({vals[0]:.1f}% → {vals[-1]:.1f}%, gap = {gap:+.1f} pp).\n"
+            f"- {col}: {estado} (de {vals[0]:.1f}% a {vals[-1]:.1f}%, diferencia de {gap:+.1f} puntos).\n"
         )
 
     out.append(
-        "\n### Contraste con análisis sobre dataset completo (invarianza.py)\n\n"
-        "En el full dataset (155k, E2), el gap juniors→seniors fue +22,9 pp (2023), "
-        "+16,8 pp (2024), +0,6 pp (2025). "
-        "Los valores sobre la subpoblación de usuarios son estructuralmente menores porque "
-        "el salto más grande en el full dataset era el paso de no-usuarios (alta tasa) "
-        "a usuarios (baja tasa), no el gradiente intra-usuarios. "
-        "Esto es consistente con el hallazgo de eda.py (r=0,042 en usuarios vs. ~r=0,18 en full).\n\n"
+        "\nEn el conjunto completo (155k) la diferencia entre los tramos de menor y mayor experiencia "
+        "es mucho más grande, porque incluye el paso de no usuarios (tasa alta) a usuarios (tasa baja). "
+        "Entre usuarios de IA la diferencia es chica y solo es marcada en 2025.\n\n"
     )
 
-    # 3. H2
-    out.append("## 3. H2 — Discrepancia por DevType estratificada por año\n\n")
+    out.append("## 3. H2: discrepancia por rol, por año\n\n")
     out.append(tabla_h2.to_markdown())
     out.append(
-        "\n\n*(porcentajes; NaN cuando el DevType no alcanza N≥100 en ese año)*\n\n"
+        "\n\n*(porcentajes; NaN cuando el rol no llega a 100 casos en ese año)*\n\n"
     )
 
-    # Detectar year-exclusive desde la tabla pivot
     years_seen: dict[str, int] = {}
     for col in [2023, 2024, 2025]:
         if col in tabla_h2.columns:
@@ -297,115 +283,90 @@ def generar_lectura(
     year_exclusive_doc = [dt for dt, cnt in years_seen.items() if cnt < 3]
 
     if year_exclusive_doc:
-        out.append("### Notas sobre comparabilidad entre años\n\n")
+        out.append("### Comparabilidad entre años\n\n")
         for dt in year_exclusive_doc:
             yrs_with_data = [
                 str(y) for y in [2023, 2024, 2025]
                 if y in tabla_h2.columns and not pd.isna(tabla_h2.loc[dt, y])
             ]
             out.append(
-                f"- **{dt}\\*** — datos disponibles solo en {', '.join(yrs_with_data)}. "
-                "En los años restantes el OHE produce ceros por cambio en las categorías del survey.\n"
+                f"- {dt}\\*: hay datos solo en {', '.join(yrs_with_data)}. "
+                "En los otros años la encuesta usaba categorías distintas y la columna queda en cero.\n"
             )
         out.append(
-            "\nSe excluyeron de la figura DevTypes con N≥100 en un único año "
-            "(ej. 'Architect, software or solutions' en 2025).\n\n"
+            "\nNo se incluyen en la figura los roles con 100 casos o más en un solo año "
+            "(por ejemplo, 'Architect, software or solutions' en 2025).\n\n"
         )
-
-    out.append("### Lectura\n\n")
 
     avg = tabla_h2.mean(axis=1).sort_values(ascending=False)
     top3 = avg.head(3)
     bot3 = avg.tail(3)
     out.append(
-        "**DevTypes con mayor tasa de discrepancia promedio (top 3):** "
+        "Los tres roles con mayor tasa de discrepancia promedio son "
         + ", ".join(f"{dt} ({v:.1f}%)" for dt, v in top3.items())
         + ".\n\n"
     )
     out.append(
-        "**DevTypes con menor tasa de discrepancia promedio (bottom 3):** "
+        "Los tres con menor tasa promedio son "
         + ", ".join(f"{dt} ({v:.1f}%)" for dt, v in bot3[::-1].items())
         + ".\n\n"
     )
     out.append(
-        "El ordenamiento relativo entre DevTypes se mantiene aproximadamente estable entre años, "
-        "consistente con el hallazgo de invarianza.py sobre el full dataset. "
-        "Las magnitudes absolutas son menores respecto al full porque la subpoblación de usuarios "
-        "comprime la distribución de tasas (tasa base ≈21,5% en vez de ≈60%).\n\n"
+        "El orden de los roles cambia entre años. Las magnitudes son menores que en el conjunto completo "
+        "porque la tasa entre usuarios es cercana a 21,5 % y no a 60 %.\n\n"
     )
 
-    # 4. Implicaciones
-    out.append("## 4. Implicaciones para E3\n\n")
+    out.append("## 4. En resumen\n\n")
     out.append(
-        "- **Tasa base estable entre años:** la variación inter-anual en usuarios es moderada "
-        f"({delta:.1f} pp), lo que sugiere que el fenómeno de discrepancia uso-actitud "
-        "es estructuralmente robusto y no un artefacto de un año específico del survey. "
-        "Documenta en §10 (limitaciones) como evidencia de que el pooling de años no introduce sesgo apreciable.\n"
+        f"- La tasa de discrepancia sube {delta:.1f} puntos entre {min_year} y {max_year}. "
+        "El crecimiento entre años consecutivos no es uniforme: la sección temporal del trabajo lo analiza.\n"
     )
     out.append(
-        "- **H1 más débil en usuarios:** la paradoja de seniority dentro de la subpoblación de usuarios "
-        "es mucho más tenue que en el full dataset. El gradiente intra-usuarios es casi plano "
-        "comparado con el salto usuarios/no-usuarios. Fortalece la interpretación de que "
-        "la paradoja detectada en E2 era principalmente un efecto de auto-selección. Va a §8 (discusión).\n"
+        "- El gradiente por experiencia es casi nulo en 2023 y 2024 y solo es marcado en 2025.\n"
     )
     out.append(
-        "- **H2 orden relativo preservado:** los DevTypes con mayor discrepancia "
-        "mantienen su posición relativa año a año. Sugiere que el tipo de rol "
-        "es un predictor más estable que la seniority sobre la subpoblación de usuarios.\n"
+        "- El orden de los roles con más discrepancia cambia entre años, así que no puede afirmarse que se mantenga.\n"
     )
-    out.append(
-        "- **Insumo para Capa B:** los valores de tasa base por año sirven "
-        "como referencia para el modelado temporal estratificado.\n\n"
-    )
-
-    out.append("---\n\n*Generado por `scripts/temporal.py`*\n")
 
     return "".join(out)
 
 
 def main():
-    print("=" * 70)
-    print("ANÁLISIS TEMPORAL SOBRE USUARIOS")
-    print("=" * 70)
+    print("Análisis temporal sobre usuarios de IA")
 
     OUTPUTS.mkdir(exist_ok=True)
 
     df = cargar()
     dist = df["survey_year"].value_counts().sort_index()
-    print(f"Dataset: {df.shape[0]:,} filas × {df.shape[1]} cols")
-    print(f"Distribución por año: {dist.to_dict()}")
+    print(f"Datos: {df.shape[0]:,} filas, {df.shape[1]} columnas")
+    print(f"Casos por año: {dist.to_dict()}")
     print(f"Tasa global de discrepancia: {df['discrepancia'].mean() * 100:.1f}%\n")
 
-    print("--- Tasa base por año ---")
+    print("Tasa por año")
     tabla_base, fig_base = tasa_base_por_anio(df)
     print(tabla_base.to_string())
-    fig_base.savefig(OUTPUTS / "08_temporal_tasa_base.png", dpi=150, bbox_inches="tight")
+    fig_base.savefig(OUTPUTS / "temporal_tasa_discrepancia.png", dpi=150, bbox_inches="tight")
     plt.close(fig_base)
-    print(f"✓ outputs/08_temporal_tasa_base.png\n")
+    print("Guardado outputs/temporal_tasa_discrepancia.png\n")
 
-    print("--- H1 — Seniority estratificado ---")
+    print("H1 por año")
     tabla_h1, fig_h1 = h1_temporal_usuarios(df)
     print(tabla_h1.to_string())
-    fig_h1.savefig(OUTPUTS / "08_temporal_H1_seniority.png", dpi=150, bbox_inches="tight")
+    fig_h1.savefig(OUTPUTS / "temporal_experiencia.png", dpi=150, bbox_inches="tight")
     plt.close(fig_h1)
-    print(f"✓ outputs/08_temporal_H1_seniority.png\n")
+    print("Guardado outputs/temporal_experiencia.png\n")
 
-    print("--- H2 — DevType estratificado ---")
+    print("H2 por año")
     tabla_h2, fig_h2 = h2_temporal_usuarios(df)
     print(tabla_h2.to_string())
-    fig_h2.savefig(OUTPUTS / "08_temporal_H2_devtype.png", dpi=150, bbox_inches="tight")
+    fig_h2.savefig(OUTPUTS / "temporal_rol.png", dpi=150, bbox_inches="tight")
     plt.close(fig_h2)
-    print(f"✓ outputs/08_temporal_H2_devtype.png\n")
+    print("Guardado outputs/temporal_rol.png\n")
 
-    print("--- Generando documento de lectura ---")
     md = generar_lectura(df, tabla_base, tabla_h1, tabla_h2)
     doc_path = DOCS / "resultados_temporal_usuarios.md"
     doc_path.write_text(md)
-    print(f"✓ {doc_path}\n")
-
-    print("=" * 70)
-    print("LISTO — 3 figuras + 1 doc generados")
-    print("=" * 70)
+    print(f"Guardado {doc_path.relative_to(ROOT)}")
 
 
 if __name__ == "__main__":
