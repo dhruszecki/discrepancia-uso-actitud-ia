@@ -48,6 +48,7 @@ pyproject.toml, uv.lock   dependencias con versiones fijas
 | `sensibilidad_target.py` | Resultado con otras definiciones de la clase con discrepancia. |
 | `modelado_temporal.py` | Modelos dentro de cada año y validación hacia adelante. |
 | `proyeccion_temporal.py` | Escenarios ilustrativos para 2026. |
+| `contraste_2026.py` | Contraste con la edición 2026, que cambió las preguntas de uso y actitud: tasa de discrepancia con una definición equivalente, experiencia y rol. |
 | `nombres_legibles.py` | Nombres en español de las variables para las figuras. |
 
 ## Requisitos
@@ -73,8 +74,11 @@ Los datos no están en el repositorio. Son las ediciones 2023, 2024 y 2025 del S
 data/
 ├── 2023/survey_results_public.csv
 ├── 2024/survey_results_public.csv
-└── 2025/survey_results_public.csv
+├── 2025/survey_results_public.csv
+└── 2026/survey_results_public.csv   (solo para contraste_2026.py)
 ```
+
+La edición 2026 no se suma a la serie porque cambiaron las preguntas de uso y actitud; se usa solo como contraste. Si no se descarga, todo lo demás corre igual.
 
 ### 3. Correr el análisis
 
@@ -103,9 +107,10 @@ uv run python scripts/decision_drop_auc.py
 uv run python scripts/sensibilidad_target.py
 uv run python scripts/modelado_temporal.py
 uv run python scripts/proyeccion_temporal.py
+uv run python scripts/contraste_2026.py
 ```
 
-`pipeline.py` tiene que correr primero, porque los demás leen los datasets que genera. `proyeccion_temporal.py` va al final, porque usa los resultados de `modelado_temporal.py`. El modelado es lo que más tarda.
+`pipeline.py` tiene que correr primero, porque los demás leen los datasets que genera. `proyeccion_temporal.py` y `contraste_2026.py` van al final, porque usan los resultados de `modelado_temporal.py`. El modelado es lo que más tarda.
 
 ### 4. Resultados
 
