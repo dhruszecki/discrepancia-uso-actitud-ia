@@ -6,6 +6,29 @@ El trabajo estudia a los desarrolladores que usan herramientas de IA pero no dec
 
 Este repositorio tiene lo necesario para reproducir todos los números y figuras del trabajo: los scripts con el análisis y los notebooks que los ejecutan paso a paso.
 
+## Marco teórico
+
+- **Lee y See (2004)** plantean que la meta es una confianza adecuada, no la máxima. Explican por qué importa la brecha entre uso y confianza, pero una encuesta no permite medir si la confianza está calibrada, por eso la variable se llama discrepancia y no confianza.
+- **Gillespie et al. (2025)** documentan esa brecha a escala mundial, y **Kreps et al. (2023)** le ponen nombre (*trust paradox*): se usa la IA más de lo que se confía en ella.
+- **Hoff y Bashir (2015)** muestran que la confianza se aprende con el uso (*learned trust*). Justifica medir la actitud declarada después de usar la herramienta y analizar solo a quienes la usan.
+- **Wang et al. (2024)**, con entrevistas a 17 desarrolladores, proponen las dimensiones *ability*, *integrity* y *benevolence*, que se usan para interpretar los valores SHAP.
+- Como marcos complementarios se usan la expectativa y disconfirmación (Oliver, 1980), la aversión a los algoritmos (Dietvorst et al., 2015) y la teoría del comportamiento planificado (Ajzen, 1991), que explica el uso sin actitud favorable por la presión del entorno.
+- **Baltes et al. (2026)** muestran que en ingeniería de software la palabra confianza suele usarse sin definirla, y **Peslak y Kovalchick (2025)** son el antecedente más cercano con la misma encuesta (edición 2024).
+
+### Referencias principales
+
+- Ajzen, I. (1991). The theory of planned behavior. *Organizational Behavior and Human Decision Processes*, 50(2), 179–211.
+- Baltes, S., Speith, T., Chiteri, B., Mohsenimofidi, S., Chakraborty, S. y Buschek, D. (2026). On the need to rethink trust in AI assistants for software development: A critical review. *IEEE Transactions on Software Engineering*, 52(4), 1265–1281.
+- Dietvorst, B. J., Simmons, J. P. y Massey, C. (2015). Algorithm aversion: People erroneously avoid algorithms after seeing them err. *Journal of Experimental Psychology: General*, 144(1), 114–126.
+- Gillespie, N., Lockey, S., Ward, T., Macdade, A. y Hassed, G. (2025). *Trust, Attitudes and Use of Artificial Intelligence: A Global Study 2025*. University of Melbourne y KPMG.
+- Hoff, K. A. y Bashir, M. (2015). Trust in automation: Integrating empirical evidence on factors that influence trust. *Human Factors*, 57(3), 407–434.
+- Kreps, S., George, J., Lushenko, P. y Rao, A. (2023). Exploring the artificial intelligence "Trust paradox": Evidence from a survey experiment in the United States. *PLOS ONE*, 18(7), e0288109.
+- Lee, J. D. y See, K. A. (2004). Trust in automation: Designing for appropriate reliance. *Human Factors*, 46(1), 50–80.
+- Lundberg, S. M. y Lee, S.-I. (2017). A unified approach to interpreting model predictions. *Advances in Neural Information Processing Systems 30*.
+- Oliver, R. L. (1980). A cognitive model of the antecedents and consequences of satisfaction decisions. *Journal of Marketing Research*, 17(4), 460–469.
+- Peslak, A. y Kovalchick, L. (2025). From code to concern: A demographic analysis of AI challenges and ethics in IT development. *Issues in Information Systems*, 26(3), 136–148.
+- Wang, R., Cheng, R., Ford, D. y Zimmermann, T. (2024). Investigating and designing for trust in AI-powered code generation tools. *FAccT '24*, 1475–1502.
+
 ## Contenido
 
 ```
