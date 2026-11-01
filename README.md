@@ -84,7 +84,7 @@ uv sync
 
 ### 2. Descargar los datos
 
-Los datos no están en el repositorio. Son las ediciones 2023, 2024 y 2025 del Stack Overflow Developer Survey, que se publican con la licencia Open Database License en <https://survey.stackoverflow.co/>. De cada edición hay que bajar el archivo completo («Download Full Data Set (CSV)»), descomprimirlo y dejar el archivo `survey_results_public.csv` así:
+Los datos no están en el repositorio. Son las ediciones 2023, 2024 y 2025 del Stack Overflow Developer Survey, que se publican con la licencia Open Database License en <https://survey.stackoverflow.co/>. De cada edición hay que bajar el archivo completo ("Download Full Data Set (CSV)"), descomprimirlo y dejar el archivo `survey_results_public.csv` así:
 
 ```
 data/
