@@ -252,44 +252,75 @@ def shap_local_cases(model, X_bg, shap_values, mean_abs_shap):
     return [(label, int(idx), float(probs[idx])) for label, idx in cases]
 
 
-def wang_mapping(mean_abs_shap):
-    """Asigna cada variable a ability, integrity o benevolence y suma su SHAP."""
-    # La asignación es por el nombre de la columna; es una aproximación.
-    ability_keywords = ["lang_", "plat_", "db_", "env_", "_count", "YearsCode", "WorkExp", "EdLevel", "DevType_"]
-    integrity_keywords = ["survey_year", "OrgSize", "RemoteWork", "Employment", "ICorPM"]
-    benevolence_keywords = ["Region_", "Industry_"]
+# Preguntas de la encuesta: las variables indicadoras y la cantidad de opciones de una misma
+# pregunta se suman antes de agregar por dimensión, para que una pregunta con muchas
+# opciones no cuente como muchas variables.
+PREFIJOS_PREGUNTA = ["lang", "env", "db", "plat", "DevType", "Industry", "Region",
+                     "Employment", "RemoteWork", "ICorPM"]
+NOMBRE_PREGUNTA = {
+    "lang": "Lenguajes", "env": "Entornos de desarrollo", "db": "Bases de datos",
+    "plat": "Plataformas", "DevType": "Rol", "Industry": "Industria", "Region": "Región",
+    "Employment": "Tipo de empleo", "RemoteWork": "Modalidad de trabajo",
+    "ICorPM": "Posición", "YearsCode": "Años programando", "WorkExp": "Experiencia laboral",
+    "EdLevel": "Nivel educativo", "OrgSize": "Tamaño de la organización",
+    "survey_year": "Año de la encuesta",
+}
+# La asignación a las dimensiones es propia y por pregunta; es una aproximación.
+DIMENSION_PREGUNTA = {
+    "lang": "Ability", "env": "Ability", "db": "Ability", "plat": "Ability",
+    "DevType": "Ability", "YearsCode": "Ability", "WorkExp": "Ability", "EdLevel": "Ability",
+    "OrgSize": "Integrity", "RemoteWork": "Integrity", "Employment": "Integrity", "ICorPM": "Integrity",
+    "Region": "Benevolence", "Industry": "Benevolence",
+    # El año no describe a la persona: queda fuera de las tres dimensiones.
+    "survey_year": "Año",
+}
 
-    def classify(col):
-        if any(k in col for k in ability_keywords):
-            return "Ability"
-        if any(k in col for k in integrity_keywords):
-            return "Integrity"
-        if any(k in col for k in benevolence_keywords):
-            return "Benevolence"
-        return "Other"
 
-    df_map = pd.DataFrame({"feature": mean_abs_shap.index, "shap": mean_abs_shap.values})
-    df_map["dim"] = df_map["feature"].apply(classify)
-    summary = df_map.groupby("dim")["shap"].agg(["sum", "count", "mean"]).sort_values("sum", ascending=False)
-    print(f"\nSHAP por dimensión de Wang:\n{summary}")
+def pregunta_de(col: str) -> str:
+    prefijo = col.split("_")[0]
+    return prefijo if prefijo in PREFIJOS_PREGUNTA else col
+
+
+def wang_mapping(shap_values, columns):
+    """Suma el SHAP de cada pregunta y lo agrupa en ability, integrity y benevolence, sin el año."""
+    shap_df = pd.DataFrame(shap_values, columns=columns)
+    preguntas = [pregunta_de(c) for c in columns]
+    # Se suman los valores SHAP con signo de cada fila antes del valor absoluto: así se mide
+    # el efecto de la pregunta completa y no la suma de los efectos de cada opción.
+    shap_pregunta = shap_df.T.groupby(preguntas).sum().T.abs().mean()
+    df_map = pd.DataFrame({"pregunta": shap_pregunta.index, "shap": shap_pregunta.values})
+    df_map["dim"] = df_map["pregunta"].map(DIMENSION_PREGUNTA)
+    df_map["nombre"] = df_map["pregunta"].map(NOMBRE_PREGUNTA)
+    assert df_map["dim"].notna().all(), "Hay preguntas sin dimensión"
+
+    sin_anio = df_map[df_map["dim"] != "Año"]
+    summary = sin_anio.groupby("dim")["shap"].agg(["sum", "count", "mean"]).sort_values("sum", ascending=False)
+    summary["share"] = summary["sum"] / summary["sum"].sum()
+    print(f"\nSHAP por dimensión de Wang (por pregunta, sin el año):\n{summary}")
+    print(f"\nSHAP por pregunta:\n{df_map.sort_values('shap', ascending=False).to_string()}")
 
     fig, axes = plt.subplots(1, 2, figsize=(13, 6))
-    colors_dim = {"Ability": "#3b82f6", "Integrity": "#f59e0b", "Benevolence": "#10b981", "Other": "#9ca3af"}
+    colors_dim = {"Ability": "#3b82f6", "Integrity": "#f59e0b", "Benevolence": "#10b981", "Año": "#9ca3af"}
 
-    sums = summary["sum"]
-    axes[0].bar(sums.index, sums.values, color=[colors_dim[d] for d in sums.index])
-    axes[0].set_title("Suma del SHAP absoluto por dimensión de Wang et al.")
-    axes[0].set_ylabel("Suma del SHAP medio absoluto")
+    orden = ["Ability", "Integrity", "Benevolence"]
+    medias = summary["mean"].reindex(orden)
+    bars = axes[0].bar(orden, medias.values, color=[colors_dim[d] for d in orden])
+    for b, d in zip(bars, orden):
+        axes[0].text(b.get_x() + b.get_width() / 2, b.get_height(),
+                     f"{int(summary.loc[d, 'count'])} preguntas", ha="center", va="bottom", fontsize=9)
+    axes[0].set_title("SHAP medio por pregunta, según dimensión de Wang et al.\n(sin el año de la encuesta)")
+    axes[0].set_ylabel("SHAP medio absoluto de la pregunta")
 
-    top15 = df_map.sort_values("shap", ascending=False).head(15).iloc[::-1]
-    axes[1].barh(range(len(top15)), top15["shap"], color=[colors_dim[d] for d in top15["dim"]])
-    axes[1].set_yticks(range(len(top15)))
-    axes[1].set_yticklabels([nombre_legible(f) for f in top15["feature"]], fontsize=9)
-    axes[1].set_xlabel("SHAP medio absoluto")
-    axes[1].set_title("15 variables principales, por dimensión de Wang")
+    orden_preg = df_map.sort_values("shap").reset_index(drop=True)
+    axes[1].barh(range(len(orden_preg)), orden_preg["shap"], color=[colors_dim[d] for d in orden_preg["dim"]])
+    axes[1].set_yticks(range(len(orden_preg)))
+    axes[1].set_yticklabels(orden_preg["nombre"], fontsize=9)
+    axes[1].set_xlabel("SHAP medio absoluto de la pregunta")
+    axes[1].set_title("Preguntas de la encuesta, por dimensión de Wang")
 
     import matplotlib.patches as mpatches
-    handles = [mpatches.Patch(color=v, label=k) for k, v in colors_dim.items() if k != "Other"]
+    handles = [mpatches.Patch(color=v, label=k if k != "Año" else "Fuera de las dimensiones")
+               for k, v in colors_dim.items()]
     axes[1].legend(handles=handles, loc="lower right", fontsize=8)
 
     fig.tight_layout()
@@ -299,7 +330,7 @@ def wang_mapping(mean_abs_shap):
     return summary, df_map
 
 
-def generar_documento_md(cv_results, auc_oof, shap_name, top_features, wang_summary, cases):
+def generar_documento_md(cv_results, auc_oof, shap_name, top_features, wang_summary, wang_preguntas, cases):
     """Arma el informe en markdown con los resultados."""
     out = []
     out.append("# Modelado supervisado sobre usuarios de IA: resultados\n\n")
@@ -325,7 +356,13 @@ def generar_documento_md(cv_results, auc_oof, shap_name, top_features, wang_summ
     out.append("\n\n")
 
     out.append("## 3. Dimensiones de Wang et al. (ability, integrity, benevolence)\n\n")
+    out.append("Se suman los valores SHAP de las opciones de cada pregunta de la encuesta y después se "
+               "agrupan las preguntas por dimensión. El año de la encuesta queda fuera de las tres.\n\n")
     out.append(wang_summary.round(4).to_markdown())
+    out.append("\n\n### SHAP por pregunta\n\n")
+    tabla = wang_preguntas.sort_values("shap", ascending=False)[["nombre", "dim", "shap"]]
+    out.append(tabla.rename(columns={"nombre": "Pregunta", "dim": "Dimensión", "shap": "SHAP medio absoluto"})
+               .round(4).to_markdown(index=False))
     out.append("\n\n")
 
     out.append("## 4. Casos locales\n\n")
@@ -337,7 +374,7 @@ def generar_documento_md(cv_results, auc_oof, shap_name, top_features, wang_summ
     out.append("Con los usuarios de IA (80.369 filas, 78,5 % sin discrepancia y 21,5 % con discrepancia):\n\n")
     out.append("- Los cuatro modelos quedan entre 0,61 y 0,63 de ROC-AUC. Los tres primeros están dentro de la variación entre partes de la validación cruzada.\n")
     out.append("- Los valores SHAP son de un random forest. Un valor positivo empuja hacia la ausencia de discrepancia y uno negativo hacia la discrepancia.\n")
-    out.append("- Los pesos por dimensión de Wang dependen de cuántas variables tiene cada dimensión y del año de la encuesta, que se asignó a *integrity*.\n")
+    out.append("- Los pesos por dimensión de Wang se calculan por pregunta y sin el año de la encuesta. Aun así dependen de cuántas preguntas de cada tipo tiene la encuesta.\n")
 
     return "".join(out)
 
@@ -367,7 +404,7 @@ def main():
     cases = shap_local_cases(fitted_model, X_bg, shap_values, top_features)
 
     print("\nDimensiones de Wang")
-    wang_summary, _ = wang_mapping(top_features)
+    wang_summary, wang_preguntas = wang_mapping(shap_values, X_bg.columns)
 
     (OUTPUTS / "modelos_resultados_cv.json").write_text(json.dumps({
         "cv_results": cv_results,
@@ -378,10 +415,11 @@ def main():
         "n_features": int(len(feature_cols)),
         "target_dist": {"target_1_pct": float(y.mean()), "target_0_pct": float((1-y).mean())},
         "wang_summary": wang_summary.to_dict(),
+        "shap_por_pregunta": wang_preguntas.set_index("pregunta")["shap"].to_dict(),
     }, indent=2, default=str))
     print(f"Guardado outputs/modelos_resultados_cv.json")
 
-    md = generar_documento_md(cv_results, auc_oof, shap_name, top_features, wang_summary, cases)
+    md = generar_documento_md(cv_results, auc_oof, shap_name, top_features, wang_summary, wang_preguntas, cases)
     (DOCS / "resultados_modelado_usuarios.md").write_text(md)
     print(f"Guardado docs/analisis/resultados_modelado_usuarios.md")
 

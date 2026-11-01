@@ -45,6 +45,7 @@ COLORS_YEAR = {2023: "#3b82f6", 2024: "#8b5cf6", 2025: "#f59e0b"}
 COLOR_POOLED = "#1f2937"
 RANDOM_STATE = 42
 CV_SPLITS = 5
+N_BOOTSTRAP = 1000
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_PATH = ROOT / "data" / "df_clean_users.parquet"
@@ -73,7 +74,8 @@ def common_features(df: pd.DataFrame) -> list[str]:
     survey_year queda afuera porque es constante dentro de cada año. También quedan
     afuera las columnas indicadoras que solo toman valores distintos en algún año.
     """
-    exclude = {"target", "survey_year"}
+    # "discrepancia" es 1 − target (la agrega temporal.cargar()); nunca puede ser variable.
+    exclude = {"target", "survey_year", "discrepancia"}
     candidates = [c for c in df.columns if c not in exclude]
     stds = df.groupby("survey_year")[candidates].std()
     valid = (stds > 0).all(axis=0)
@@ -99,19 +101,49 @@ def _xgb_model(y: pd.Series) -> XGBClassifier:
     )
 
 
+def ic_auc(y: np.ndarray, prob: np.ndarray, prob_ref: np.ndarray | None = None) -> tuple[float, float]:
+    """Intervalo de confianza del 95 % por bootstrap del ROC-AUC.
+
+    Si se pasa prob_ref, el intervalo es el de la diferencia AUC(prob) − AUC(prob_ref),
+    remuestreando las mismas filas para los dos modelos.
+    """
+    y = np.asarray(y)
+    rng = np.random.default_rng(RANDOM_STATE)
+    valores = []
+    for _ in range(N_BOOTSTRAP):
+        idx = rng.integers(0, len(y), len(y))
+        if y[idx].min() == y[idx].max():
+            continue
+        v = roc_auc_score(y[idx], prob[idx])
+        if prob_ref is not None:
+            v -= roc_auc_score(y[idx], prob_ref[idx])
+        valores.append(v)
+    lo, hi = np.percentile(valores, [2.5, 97.5])
+    return float(lo), float(hi)
+
+
 def evaluar_cv(X: pd.DataFrame, y: pd.Series, label: str, use_xgb: bool = False) -> dict:
-    """Validación cruzada estratificada; devuelve el ROC-AUC y el PR-AUC de la clase con discrepancia."""
+    """Validación cruzada estratificada; devuelve el ROC-AUC con su intervalo y el PR-AUC de la clase con discrepancia.
+
+    También devuelve las predicciones fuera de muestra (clave "prob"), que se usan para
+    comparar con la validación hacia adelante y no se guardan en el JSON.
+    """
     cv = StratifiedKFold(n_splits=CV_SPLITS, shuffle=True, random_state=RANDOM_STATE)
     model = _xgb_model(y) if use_xgb else _logreg_pipeline(y)
     y_prob_all = cross_val_predict(model, X, y, cv=cv, method="predict_proba")
     y_prob_1 = y_prob_all[:, 1]
     y_prob_0 = y_prob_all[:, 0]
     roc = float(roc_auc_score(y, y_prob_1))
+    roc_lo, roc_hi = ic_auc(y.to_numpy(), y_prob_1)
     # El PR-AUC se calcula sobre la clase con discrepancia, que es la minoritaria;
     # un clasificador al azar obtiene su prevalencia (alrededor de 21,5 %).
     pr = float(average_precision_score(y == 0, y_prob_0))
-    print(f"  {label:<40} ROC-AUC={roc:.4f}  PR-AUC(min)={pr:.4f}  (N={len(y):,})")
-    return {"roc_auc": roc, "pr_auc": pr, "n": int(len(y)), "target_0_pct": float((1 - y).mean())}
+    print(f"  {label:<40} ROC-AUC={roc:.4f} [{roc_lo:.4f}, {roc_hi:.4f}]  PR-AUC(min)={pr:.4f}  (N={len(y):,})")
+    return {
+        "roc_auc": roc, "roc_ic": [roc_lo, roc_hi], "pr_auc": pr,
+        "n": int(len(y)), "target_0_pct": float((1 - y).mean()),
+        "prob": pd.Series(y_prob_1, index=y.index),
+    }
 
 
 def comparar_auc(df: pd.DataFrame, feature_cols: list[str]) -> dict:
@@ -126,6 +158,9 @@ def comparar_auc(df: pd.DataFrame, feature_cols: list[str]) -> dict:
 
     X_pool = df[feature_cols]
     results["pooled_sin_year"] = evaluar_cv(X_pool, y_full, "Años juntos, sin survey_year")
+
+    # Línea de base: solo el año. Mide cuánto se predice únicamente con la tasa de cada edición.
+    results["pooled_solo_year"] = evaluar_cv(df[["survey_year"]], y_full, "Años juntos, solo survey_year")
 
     for year in [2023, 2024, 2025]:
         df_y = df[df["survey_year"] == year]
@@ -333,11 +368,14 @@ def evaluar_forward(
     feature_cols: list[str],
     train_years: list[int],
     test_year: int,
+    prob_within: pd.Series,
 ) -> dict:
     """Entrena con train_years y evalúa en test_year.
 
     Usa las mismas variables que los modelos dentro del año, así los resultados se pueden
-    comparar y no falta ninguna variable en el año de prueba.
+    comparar y no falta ninguna variable en el año de prueba. prob_within son las
+    predicciones fuera de muestra del modelo dentro del año de prueba, para el intervalo
+    de la diferencia.
     """
     df_train = df[df["survey_year"].isin(train_years)]
     df_test = df[df["survey_year"] == test_year]
@@ -352,14 +390,17 @@ def evaluar_forward(
 
     y_prob_all = pipe.predict_proba(X_test)
     roc = float(roc_auc_score(y_test, y_prob_all[:, 1]))
+    roc_lo, roc_hi = ic_auc(y_test.to_numpy(), y_prob_all[:, 1])
+    dif_lo, dif_hi = ic_auc(y_test.to_numpy(), y_prob_all[:, 1], prob_within.loc[y_test.index].to_numpy())
     pr = float(average_precision_score(y_test == 0, y_prob_all[:, 0]))
 
     train_label = "+".join(str(y) for y in train_years)
     label = f"Entrena con {train_label}, evalúa en {test_year}"
-    print(f"  {label:<40} ROC-AUC={roc:.4f}  PR-AUC(min)={pr:.4f}  "
+    print(f"  {label:<40} ROC-AUC={roc:.4f} [{roc_lo:.4f}, {roc_hi:.4f}]  "
+          f"diferencia IC [{dif_lo:+.4f}, {dif_hi:+.4f}]  PR-AUC(min)={pr:.4f}  "
           f"(N_train={len(y_train):,}  N_test={len(y_test):,})")
     return {
-        "roc_auc": roc, "pr_auc": pr,
+        "roc_auc": roc, "roc_ic": [roc_lo, roc_hi], "dif_ic": [dif_lo, dif_hi], "pr_auc": pr,
         "n_train": int(len(y_train)), "n_test": int(len(y_test)),
         "target_0_pct_test": float((1 - y_test).mean()),
         "label": label,
@@ -457,6 +498,7 @@ def generar_lectura(
     labels = {
         "pooled_con_year": "Años juntos, con el año de la encuesta",
         "pooled_sin_year": "Años juntos, sin el año de la encuesta",
+        "pooled_solo_year": "Años juntos, solo el año de la encuesta",
         "within_2023": "Dentro del año 2023",
         "within_2024": "Dentro del año 2024",
         "within_2025": "Dentro del año 2025",
@@ -466,6 +508,7 @@ def generar_lectura(
         rows.append({
             "Condición": label,
             "ROC-AUC": round(r["roc_auc"], 4),
+            "IC 95 %": f"[{r['roc_ic'][0]:.4f}, {r['roc_ic'][1]:.4f}]",
             "PR-AUC": round(r["pr_auc"], 4),
             "N": f"{r['n']:,}",
             "% discrepancia": f"{r['target_0_pct']:.1%}",
@@ -477,6 +520,12 @@ def generar_lectura(
     delta_year = auc_results["pooled_con_year"]["roc_auc"] - auc_results["pooled_sin_year"]["roc_auc"]
     out.append(f"**Aporte del año de la encuesta al modelo con los años juntos:** {delta_year:+.4f} de ROC-AUC "
                "(con el año menos sin el año).\n\n")
+    out.append(
+        f"**Línea de base con solo el año:** ROC-AUC {auc_results['pooled_solo_year']['roc_auc']:.4f}. "
+        "Es lo que se predice conociendo únicamente la tasa de discrepancia de cada edición.\n\n"
+        f"Los intervalos de confianza del 95 % salen de {N_BOOTSTRAP} remuestreos *bootstrap* de las "
+        "predicciones fuera de muestra.\n\n"
+    )
 
     out.append(
         "**Referencia del PR-AUC:** un clasificador al azar obtiene un PR-AUC igual a la prevalencia de la clase "
@@ -563,6 +612,7 @@ def generar_lectura(
                 "ROC-AUC": round(r["roc_auc"], 4),
                 "PR-AUC": round(r["pr_auc"], 4),
                 "Diferencia de ROC-AUC": f"{delta_roc:+.4f}",
+                "IC 95 % de la diferencia": f"[{r['dif_ic'][0]:+.4f}, {r['dif_ic'][1]:+.4f}]",
                 "Diferencia de PR-AUC": f"{delta_pr:+.4f}",
                 "N de prueba": f"{r['n_test']:,}",
             })
@@ -617,9 +667,11 @@ def main():
 
     print("\nValidación hacia adelante")
     forward_results = {}
-    forward_results["fwd_23_24"] = evaluar_forward(df, feature_cols, [2023], 2024)
-    forward_results["fwd_24_25"] = evaluar_forward(df, feature_cols, [2024], 2025)
-    forward_results["fwd_2324_25"] = evaluar_forward(df, feature_cols, [2023, 2024], 2025)
+    prob_24 = auc_results["within_2024"]["prob"]
+    prob_25 = auc_results["within_2025"]["prob"]
+    forward_results["fwd_23_24"] = evaluar_forward(df, feature_cols, [2023], 2024, prob_24)
+    forward_results["fwd_24_25"] = evaluar_forward(df, feature_cols, [2024], 2025, prob_25)
+    forward_results["fwd_2324_25"] = evaluar_forward(df, feature_cols, [2023, 2024], 2025, prob_25)
 
     fig_val = figura_validacion_temporal(auc_results, forward_results,
                                          auc_results["pooled_sin_year"]["roc_auc"])
@@ -628,8 +680,8 @@ def main():
     print("Guardado outputs/temporal_validacion.png")
 
     results_json = {
-        "auc_results": auc_results,
-        "xgb_results": xgb_results,
+        "auc_results": {k: {c: v for c, v in r.items() if c != "prob"} for k, r in auc_results.items()},
+        "xgb_results": {k: {c: v for c, v in r.items() if c != "prob"} for k, r in xgb_results.items()},
         "forward_results": forward_results,
         "n_common_features": len(feature_cols),
         "n_sign_changes": n_sign,

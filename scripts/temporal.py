@@ -208,11 +208,109 @@ def h2_temporal_usuarios(df: pd.DataFrame) -> tuple[pd.DataFrame, plt.Figure]:
     return tabla, fig
 
 
+def wilson(k: float, n: float, z: float = 1.96) -> tuple[float, float]:
+    """Intervalo de Wilson del 95 % para una proporción."""
+    p = k / n
+    centro = (p + z**2 / (2 * n)) / (1 + z**2 / n)
+    margen = z * np.sqrt(p * (1 - p) / n + z**2 / (4 * n**2)) / (1 + z**2 / n)
+    return centro - margen, centro + margen
+
+
+def logit_or(X: pd.DataFrame, y: pd.Series) -> pd.DataFrame:
+    """Regresión logística sin penalización; odds ratio e intervalo de Wald del 95 % por variable."""
+    from sklearn.linear_model import LogisticRegression
+
+    modelo = LogisticRegression(penalty=None, max_iter=5000).fit(X, y)
+    X1 = np.column_stack([np.ones(len(X)), X.to_numpy(dtype=float)])
+    p = modelo.predict_proba(X)[:, 1]
+    cov = np.linalg.inv(X1.T @ (X1 * (p * (1 - p))[:, None]))
+    beta = modelo.coef_[0]
+    se = np.sqrt(np.diag(cov))[1:]
+    return pd.DataFrame({
+        "OR": np.exp(beta),
+        "IC_inf": np.exp(beta - 1.96 * se),
+        "IC_sup": np.exp(beta + 1.96 * se),
+    }, index=X.columns)
+
+
+def tasa_estandarizada(df: pd.DataFrame, mask: pd.Series) -> tuple[float, float, float]:
+    """Tasa de discrepancia de un grupo ajustada por año (estandarización directa).
+
+    Pondera la tasa del grupo en cada año por la proporción de ese año en el total, así
+    todos los grupos quedan con la misma mezcla de años.
+    """
+    pesos = df["survey_year"].value_counts(normalize=True)
+    tasa, var = 0.0, 0.0
+    for year, w in pesos.items():
+        sub = df.loc[mask & (df["survey_year"] == year), "discrepancia"]
+        p = sub.mean()
+        tasa += w * p
+        var += w**2 * p * (1 - p) / len(sub)
+    return tasa, tasa - 1.96 * np.sqrt(var), tasa + 1.96 * np.sqrt(var)
+
+
+def h1_ajustada(df: pd.DataFrame) -> dict:
+    """H1 ajustada por año: N y tasa por tramo y año, tasas estandarizadas y odds ratios.
+
+    El año confunde la relación porque en 2025 hay más discrepancia y más personas con
+    muchos años programando.
+    """
+    df = df.copy()
+    df["exp_tramo"] = tramo_experiencia(df["YearsCode"])
+    anios = pd.get_dummies(df["survey_year"], prefix="anio", drop_first=True, dtype=float)
+
+    filas = []
+    for (year, tramo), sub in df.groupby(["survey_year", "exp_tramo"], observed=True):
+        k, n = sub["discrepancia"].sum(), len(sub)
+        lo, hi = wilson(k, n)
+        filas.append({"Año": int(year), "Tramo": tramo, "N": n,
+                      "Tasa %": 100 * k / n, "IC inf %": 100 * lo, "IC sup %": 100 * hi})
+    por_tramo_anio = pd.DataFrame(filas)
+
+    filas = []
+    for tramo in df["exp_tramo"].cat.categories:
+        mask = df["exp_tramo"] == tramo
+        tasa, lo, hi = tasa_estandarizada(df, mask)
+        filas.append({"Tramo": tramo, "Tasa cruda %": 100 * df.loc[mask, "discrepancia"].mean(),
+                      "Tasa ajustada %": 100 * tasa, "IC inf %": 100 * lo, "IC sup %": 100 * hi})
+    estandarizada = pd.DataFrame(filas).set_index("Tramo")
+
+    # Odds ratio por cada 10 años programando, sin ajustar y ajustado por año.
+    x10 = (df[["YearsCode"]] / 10).rename(columns={"YearsCode": "10 años programando"})
+    or_crudo = logit_or(x10, df["discrepancia"]).iloc[0]
+    or_ajustado = logit_or(pd.concat([x10, anios], axis=1), df["discrepancia"]).iloc[0]
+
+    tramos = pd.get_dummies(df["exp_tramo"], prefix="tramo", drop_first=True, dtype=float)
+    or_tramos = logit_or(pd.concat([tramos, anios], axis=1), df["discrepancia"]).loc[tramos.columns]
+
+    print(f"  OR por 10 años: crudo {or_crudo['OR']:.3f} [{or_crudo['IC_inf']:.3f}, {or_crudo['IC_sup']:.3f}], "
+          f"ajustado por año {or_ajustado['OR']:.3f} [{or_ajustado['IC_inf']:.3f}, {or_ajustado['IC_sup']:.3f}]")
+    print(estandarizada.round(1).to_string())
+    return {"por_tramo_anio": por_tramo_anio, "estandarizada": estandarizada,
+            "or_crudo": or_crudo, "or_ajustado": or_ajustado, "or_tramos": or_tramos}
+
+
+def h2_ajustada(df: pd.DataFrame) -> pd.DataFrame:
+    """H2 ajustada por año: tasa cruda y estandarizada por rol, con intervalo del 95 %."""
+    filas = []
+    for col in [c for c in df.columns if c.startswith("DevType_")]:
+        mask = df[col] == 1
+        tasa, lo, hi = tasa_estandarizada(df, mask)
+        filas.append({"Rol": col.replace("DevType_", ""), "N": int(mask.sum()),
+                      "Tasa cruda %": 100 * df.loc[mask, "discrepancia"].mean(),
+                      "Tasa ajustada %": 100 * tasa, "IC inf %": 100 * lo, "IC sup %": 100 * hi})
+    tabla = pd.DataFrame(filas).set_index("Rol").sort_values("Tasa ajustada %", ascending=False)
+    print(tabla.round(1).to_string())
+    return tabla
+
+
 def generar_lectura(
     df: pd.DataFrame,
     tabla_base: pd.DataFrame,
     tabla_h1: pd.DataFrame,
     tabla_h2: pd.DataFrame,
+    h1_aj: dict,
+    h2_aj: pd.DataFrame,
 ) -> str:
     """Arma el informe markdown con los resultados por año."""
     global_rate = df["discrepancia"].mean() * 100
@@ -316,7 +414,32 @@ def generar_lectura(
         "porque la tasa entre usuarios es cercana a 21,5 % y no a 60 %.\n\n"
     )
 
-    out.append("## 4. En resumen\n\n")
+    out.append("## 4. H1 y H2 ajustadas por año\n\n")
+    out.append(
+        "El año de la encuesta puede confundir las comparaciones, porque en 2025 hay más discrepancia "
+        "y la mezcla de experiencia y de roles cambia entre ediciones. Se ajusta de dos formas. "
+        "La tasa ajustada pondera la tasa de cada año por la proporción de ese año en el total "
+        "(estandarización directa), así todos los grupos quedan con la misma mezcla de años. "
+        "Los odds ratios salen de una regresión logística con el año como covariable "
+        "(intervalos de Wald del 95 %). Los intervalos de las tasas por tramo y año son de Wilson.\n\n"
+    )
+    out.append("### H1: N y tasa por tramo y año\n\n")
+    out.append(h1_aj["por_tramo_anio"].round(1).to_markdown(index=False))
+    out.append("\n\n### H1: tasa cruda y ajustada por año, por tramo\n\n")
+    out.append(h1_aj["estandarizada"].round(1).to_markdown())
+    oc, oa = h1_aj["or_crudo"], h1_aj["or_ajustado"]
+    out.append(
+        f"\n\n**Odds ratio por cada 10 años programando:** sin ajustar {oc['OR']:.3f} "
+        f"[{oc['IC_inf']:.3f}, {oc['IC_sup']:.3f}]; ajustado por año {oa['OR']:.3f} "
+        f"[{oa['IC_inf']:.3f}, {oa['IC_sup']:.3f}].\n\n"
+    )
+    out.append("**Odds ratio de cada tramo contra 0–2 años, ajustado por año:**\n\n")
+    out.append(h1_aj["or_tramos"].round(3).to_markdown())
+    out.append("\n\n### H2: tasa cruda y ajustada por año, por rol\n\n")
+    out.append(h2_aj.round(1).to_markdown())
+    out.append("\n\n")
+
+    out.append("## 5. En resumen\n\n")
     out.append(
         f"- La tasa de discrepancia sube {delta:.1f} puntos entre {min_year} y {max_year}. "
         "El crecimiento entre años consecutivos no es uniforme: la sección temporal del trabajo lo analiza.\n"
@@ -363,7 +486,12 @@ def main():
     plt.close(fig_h2)
     print("Guardado outputs/temporal_rol.png\n")
 
-    md = generar_lectura(df, tabla_base, tabla_h1, tabla_h2)
+    print("H1 ajustada por año")
+    h1_aj = h1_ajustada(df)
+    print("\nH2 ajustada por año")
+    h2_aj = h2_ajustada(df)
+
+    md = generar_lectura(df, tabla_base, tabla_h1, tabla_h2, h1_aj, h2_aj)
     doc_path = DOCS / "resultados_temporal_usuarios.md"
     doc_path.write_text(md)
     print(f"Guardado {doc_path.relative_to(ROOT)}")

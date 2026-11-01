@@ -41,12 +41,13 @@ pyproject.toml, uv.lock   dependencias con versiones fijas
 |---|---|
 | `pipeline.py` | Carga las tres ediciones, unifica las categorías que cambian entre años, construye la variable a predecir, imputa y codifica. Genera los dos datasets en `data/`. |
 | `eda.py` | Hipótesis H1 (experiencia) y H2 (rol), y los grupos de K-Means. |
-| `temporal.py` | Tasa de discrepancia, H1 y H2 en cada año. |
+| `temporal.py` | Tasa de discrepancia, H1 y H2 en cada año, y H1 y H2 ajustadas por año. |
 | `brecha_uso_actitud.py` | Cruce entre uso y actitud en todos los desarrolladores. |
-| `modelado.py` | Cuatro modelos con validación cruzada, valores SHAP, tres casos y dimensiones de Wang et al. (2024). |
+| `modelado.py` | Cuatro modelos con validación cruzada, valores SHAP, tres casos y dimensiones de Wang et al. (2024), con el SHAP sumado por pregunta. |
 | `decision_drop_auc.py` | Misma regresión logística sobre todos los desarrolladores y sobre los usuarios de IA. |
 | `sensibilidad_target.py` | Resultado con otras definiciones de la clase con discrepancia. |
-| `modelado_temporal.py` | Modelos dentro de cada año y validación hacia adelante. |
+| `sensibilidad_faltantes.py` | Resultado con indicadores de falta de respuesta y solo con quienes respondieron la pregunta de entornos. |
+| `modelado_temporal.py` | Modelos dentro de cada año, modelo con solo el año, validación hacia adelante e intervalos de confianza del AUC. |
 | `proyeccion_temporal.py` | Escenarios ilustrativos para 2026. |
 | `contraste_2026.py` | Contraste con la edición 2026, que cambió las preguntas de uso y actitud: tasa de discrepancia con una definición equivalente, experiencia y rol. |
 | `nombres_legibles.py` | Nombres en español de las variables para las figuras. |
@@ -121,6 +122,7 @@ uv run python scripts/brecha_uso_actitud.py
 uv run python scripts/modelado.py
 uv run python scripts/decision_drop_auc.py
 uv run python scripts/sensibilidad_target.py
+uv run python scripts/sensibilidad_faltantes.py
 uv run python scripts/modelado_temporal.py
 uv run python scripts/proyeccion_temporal.py
 uv run python scripts/contraste_2026.py
