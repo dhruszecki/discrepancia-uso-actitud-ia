@@ -172,7 +172,7 @@ def figura(tasas: np.ndarray, curvas: dict, sens: pd.DataFrame, tabla_h1: pd.Dat
         ax.plot(t, y * 100, color=color, lw=1.8, ls=ls, label=f"Proyección, {label.lower()}: {_c(y26 * 100)} %")
     ax.scatter([2023, 2024, 2025], tasas * 100, color="black", s=90, zorder=10, label="Observado 2023–2025")
     for yr, v in zip((2023, 2024, 2025), tasas):
-        ax.annotate(f"{_c(v * 100)} %", (yr, v * 100), textcoords="offset points", xytext=(7, 6), fontsize=9)
+        ax.annotate(f"{_c(v * 100)} %", (yr, v * 100), textcoords="offset points", xytext=(-8, 8), ha="right", fontsize=9)
     principal = sens["tasa"].iloc[0]
     ax.errorbar([2026], [principal], yerr=[[principal - sens["tasa"].min()], [sens["tasa"].max() - principal]],
                 fmt="D", color=COLORS_YEAR[2026], ms=8, capsize=5, zorder=11,

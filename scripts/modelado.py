@@ -44,7 +44,15 @@ TARGET_LABELS = {
 RANDOM_STATE = 42
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from nombres_legibles import nombre_legible, renombrar_columnas  # noqa: E402
+from nombres_legibles import configurar_figuras, nombre_legible, num, renombrar_columnas  # noqa: E402
+
+configurar_figuras()
+NOMBRE_MODELO = {
+    "Logistic Regression": "Regresión logística",
+    "Decision Tree": "Árbol de decisión",
+    "Random Forest": "Random forest",
+    "XGBoost": "XGBoost",
+}
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_PATH = ROOT / "data" / "df_clean_users.parquet"
@@ -140,13 +148,13 @@ def curvas_roc(models, X, y, cv):
         fpr, tpr, _ = roc_curve(y, y_prob_oof)
         roc_auc = auc(fpr, tpr)
         auc_results[name] = float(roc_auc)
-        ax.plot(fpr, tpr, label=f"{name} (AUC={roc_auc:.3f})", color=colors[name], lw=1.8)
+        ax.plot(fpr, tpr, label=f"{NOMBRE_MODELO[name]} (AUC = {num(roc_auc, 3)})", color=colors[name], lw=1.8)
         print(f"AUC={roc_auc:.4f}")
 
     ax.plot([0, 1], [0, 1], "k--", lw=1, alpha=0.5, label="Aleatorio")
     ax.set_xlabel("Tasa de falsos positivos")
     ax.set_ylabel("Tasa de verdaderos positivos")
-    ax.set_title(f"Curvas ROC (CV k=5, N={len(X):,} usuarios IA)")
+    ax.set_title(f"Curvas ROC fuera de muestra\n(validación cruzada de 5 partes, {num(len(X), 0)} usuarios de IA)")
     ax.legend(loc="lower right", fontsize=9)
     fig.tight_layout()
     fig.savefig(OUTPUTS / "modelos_curvas_roc.png", dpi=150, bbox_inches="tight")
@@ -300,9 +308,9 @@ def wang_mapping(shap_values, columns):
     print(f"\nSHAP por pregunta:\n{df_map.sort_values('shap', ascending=False).to_string()}")
 
     fig, axes = plt.subplots(1, 2, figsize=(13, 6))
-    colors_dim = {"Ability": "#3b82f6", "Integrity": "#f59e0b", "Benevolence": "#10b981", "Año": "#9ca3af"}
+    colors_dim = {"Ability": "#3b82f6", "Benevolence": "#10b981", "Integrity": "#f59e0b", "Año": "#9ca3af"}
 
-    orden = ["Ability", "Integrity", "Benevolence"]
+    orden = ["Ability", "Benevolence", "Integrity"]
     medias = summary["mean"].reindex(orden)
     bars = axes[0].bar(orden, medias.values, color=[colors_dim[d] for d in orden])
     for b, d in zip(bars, orden):
@@ -319,7 +327,7 @@ def wang_mapping(shap_values, columns):
     axes[1].set_title("Preguntas de la encuesta, por dimensión de Wang")
 
     import matplotlib.patches as mpatches
-    handles = [mpatches.Patch(color=v, label=k if k != "Año" else "Fuera de las dimensiones")
+    handles = [mpatches.Patch(color=v, label=k if k != "Año" else "Año de la encuesta (fuera de las dimensiones)")
                for k, v in colors_dim.items()]
     axes[1].legend(handles=handles, loc="lower right", fontsize=8)
 

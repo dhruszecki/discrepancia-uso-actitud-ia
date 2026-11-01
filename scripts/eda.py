@@ -11,6 +11,7 @@ docs/analisis/resultados_eda_usuarios.md.
 """
 from __future__ import annotations
 
+import sys
 import warnings
 from pathlib import Path
 
@@ -23,7 +24,11 @@ from scipy import stats
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from nombres_legibles import configurar_figuras, nombre_rol, num  # noqa: E402
+
 warnings.filterwarnings("ignore")
+configurar_figuras()
 
 TARGET_LABELS = {
     1: "Sin discrepancia",
@@ -73,30 +78,22 @@ def h1_seniority(df: pd.DataFrame):
     valid = df[["YearsCode", "discrepancia"]].dropna()
     r, p = stats.pointbiserialr(valid["YearsCode"], valid["discrepancia"])
 
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-
+    n_tramo = df.groupby("exp_tramo", observed=True).size()
+    fig, ax = plt.subplots(figsize=(8, 4.5))
     x = np.arange(len(tabla.index))
-    width = 0.2
-    axes[0].bar(x - 1.5*width, tabla["global"], width, label="Global", color="#1f2937", alpha=0.7)
-    for i, year in enumerate(["2023", "2024", "2025"]):
-        if year in tabla.columns:
-            axes[0].bar(x + (i - 0.5)*width, tabla[year], width, label=year, color=COLORS_YEAR[int(year)])
-    axes[0].set_xticks(x)
-    axes[0].set_xticklabels(tabla.index)
-    axes[0].set_xlabel("Años programando")
-    axes[0].set_ylabel(f"% {TARGET_LABELS[0]}")
-    axes[0].set_title("Tasa de discrepancia según años programando\n(usuarios de IA)")
-    axes[0].legend(fontsize=9)
-    axes[0].grid(axis="y", linestyle="--", alpha=0.3)
-
-    for t, color, label in [(1, COLOR_T1, TARGET_LABELS[1]), (0, COLOR_T0, TARGET_LABELS[0])]:
-        sub = df[df["target"] == t]["YearsCode"]
-        axes[1].hist(sub, bins=30, alpha=0.55, color=color, label=label, density=True)
-    axes[1].set_xlabel("Años programando")
-    axes[1].set_ylabel("Densidad")
-    axes[1].set_title(f"Distribución de los años programando\n(r = {r:.3f}, p = {p:.2e})")
-    axes[1].legend(fontsize=9)
-    axes[1].grid(axis="y", linestyle="--", alpha=0.3)
+    ax.bar(x, tabla["global"], color=COLOR_T0, alpha=0.8)
+    for i, v in enumerate(tabla["global"]):
+        ax.text(i, v - 0.6, f"{num(v)} %", ha="center", va="top", fontsize=10, color="white", fontweight="bold")
+    ax.axhline(df["discrepancia"].mean() * 100, color="black", linestyle=":", lw=1,
+               label=f"Media: {num(df['discrepancia'].mean() * 100)} %")
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"{t}\n(N = {num(n_tramo[t], 0)})" for t in tabla.index])
+    ax.set_xlabel("Años programando")
+    ax.set_ylabel("% con discrepancia")
+    ax.set_ylim(0, max(tabla["global"]) * 1.2)
+    ax.set_title("Tasa de discrepancia según años programando (usuarios de IA, tres años juntos)")
+    ax.legend(loc="lower right", fontsize=9)
+    ax.grid(axis="y", linestyle="--", alpha=0.3)
 
     fig.tight_layout()
     fig.savefig(OUTPUTS / "usuarios_experiencia.png", dpi=150, bbox_inches="tight")
@@ -125,7 +122,7 @@ def h2_devtype(df: pd.DataFrame):
         if n < 100:
             continue
         tasa = df.loc[mask, "discrepancia"].mean() * 100
-        rows.append({"devtype": label, "tasa": tasa, "n": n})
+        rows.append({"devtype": nombre_rol(label), "tasa": tasa, "n": n})
     df_dev = pd.DataFrame(rows).sort_values("tasa", ascending=True)
     tasa_global = df["discrepancia"].mean() * 100
 
@@ -133,13 +130,18 @@ def h2_devtype(df: pd.DataFrame):
     colors = [COLOR_T0 if t > tasa_global else COLOR_T1 for t in df_dev["tasa"]]
     ax.barh(range(len(df_dev)), df_dev["tasa"], color=colors)
     for i, (_, row) in enumerate(df_dev.iterrows()):
-        ax.text(row["tasa"] + 0.4, i, f"{row['tasa']:.1f}% (n={row['n']:,})", va="center", fontsize=8)
+        ax.text(row["tasa"] + 0.4, i, f"{num(row['tasa'])} % (N = {num(row['n'], 0)})", va="center", fontsize=8)
     ax.set_yticks(range(len(df_dev)))
-    ax.set_yticklabels([d[:42] for d in df_dev["devtype"]], fontsize=9)
-    ax.axvline(tasa_global, color="black", linestyle=":", lw=1, label=f"Global {tasa_global:.1f}%")
-    ax.set_xlabel(f"% {TARGET_LABELS[0]}")
-    ax.set_title(f"Tasa de discrepancia por rol (usuarios de IA, N = {len(df):,})")
-    ax.legend(loc="lower right", fontsize=9)
+    ax.set_yticklabels(df_dev["devtype"], fontsize=9)
+    ax.axvline(tasa_global, color="black", linestyle=":", lw=1, label=f"Media: {num(tasa_global)} %")
+    ax.set_xlabel("% con discrepancia")
+    ax.set_xlim(0, df_dev["tasa"].max() * 1.3)
+    ax.set_title(f"Tasa de discrepancia por rol (usuarios de IA, N = {num(len(df), 0)})")
+    import matplotlib.patches as mpatches
+    linea_media = ax.get_legend_handles_labels()[0]
+    ax.legend(handles=linea_media + [mpatches.Patch(color=COLOR_T0, label="Por encima de la media"),
+                                     mpatches.Patch(color=COLOR_T1, label="Por debajo de la media")],
+              loc="lower right", fontsize=9)
     ax.grid(axis="x", linestyle="--", alpha=0.3)
     fig.tight_layout()
     fig.savefig(OUTPUTS / "usuarios_rol.png", dpi=150, bbox_inches="tight")
@@ -184,29 +186,30 @@ def h4_clusters(df: pd.DataFrame):
         "Experiencia mediana": experiencia.round(1),
     })
 
+    nombres_x = [f"{e}\n(mediana {num(m, 0)} años)" for e, m in zip(etiquetas, experiencia.values)]
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
     x = np.arange(4)
     axes[0].bar(x, porcentaje.values, color="#3b82f6")
     for i, v in enumerate(porcentaje.values):
-        axes[0].text(i, v + 0.8, f"{v:.1f} %", ha="center", fontsize=9)
+        axes[0].text(i, v + 0.8, f"{num(v)} %", ha="center", fontsize=9)
     axes[0].set_xticks(x)
-    axes[0].set_xticklabels(etiquetas)
+    axes[0].set_xticklabels(nombres_x, fontsize=9)
     axes[0].set_ylabel("% de los usuarios de IA")
     axes[0].set_title("Tamaño de cada grupo")
     axes[0].grid(axis="y", linestyle="--", alpha=0.3)
 
-    ax2 = axes[1]
-    ax2_twin = ax2.twinx()
-    ax2.bar(x, discrepancia.values, color=COLOR_T0, alpha=0.7)
+    axes[1].bar(x, discrepancia.values, color=COLOR_T0, alpha=0.7)
     for i, v in enumerate(discrepancia.values):
-        ax2.text(i, v + 0.4, f"{v:.1f} %", ha="center", fontsize=9)
-    ax2_twin.plot(x, experiencia.values, "o-", color="#1f2937", lw=2, markersize=8)
-    ax2.set_xticks(x)
-    ax2.set_xticklabels(etiquetas)
-    ax2.set_ylabel("% con discrepancia", color=COLOR_T0)
-    ax2_twin.set_ylabel("Años programando, mediana (línea)")
-    ax2.set_title("Discrepancia y experiencia mediana por grupo")
-    ax2.grid(axis="y", linestyle="--", alpha=0.3)
+        axes[1].text(i, v - 0.6, f"{num(v)} %", ha="center", va="top", fontsize=9, color="white", fontweight="bold")
+    axes[1].axhline(df["discrepancia"].mean() * 100, color="black", linestyle=":", lw=1,
+                    label=f"Media: {num(df['discrepancia'].mean() * 100)} %")
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels(nombres_x, fontsize=9)
+    axes[1].set_ylabel("% con discrepancia")
+    axes[1].set_ylim(0, discrepancia.max() * 1.25)
+    axes[1].set_title("Discrepancia en cada grupo")
+    axes[1].legend(loc="lower right", fontsize=9)
+    axes[1].grid(axis="y", linestyle="--", alpha=0.3)
 
     fig.tight_layout()
     fig.savefig(OUTPUTS / "usuarios_grupos.png", dpi=150, bbox_inches="tight")

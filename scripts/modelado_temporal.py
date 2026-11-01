@@ -36,7 +36,11 @@ import shap
 from xgboost import XGBClassifier
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from nombres_legibles import nombre_legible  # noqa: E402
+from matplotlib.ticker import MaxNLocator  # noqa: E402
+
+from nombres_legibles import configurar_figuras, nombre_legible, num  # noqa: E402
+
+configurar_figuras()
 
 warnings.filterwarnings("ignore")
 
@@ -270,17 +274,17 @@ def figura_auc_comparison(auc_results: dict) -> plt.Figure:
         bars = ax.bar(x, vals, color=[colors[k] for k in keys], width=0.6)
 
         if baseline is not None:
-            ax.axhline(baseline, color="gray", linestyle="--", lw=1, alpha=0.5, label="Aleatorio")
+            ax.axhline(baseline, color="gray", linestyle="--", lw=1, alpha=0.7, label="Azar (0,5)")
         else:
-            # En el PR-AUC el azar da la prevalencia de la discrepancia. Se toma la de 2023
-            # como referencia aproximada, aunque cambia de un año a otro.
-            pr_baseline = auc_results["within_2023"]["target_0_pct"]
-            ax.axhline(pr_baseline, color="gray", linestyle="--", lw=1, alpha=0.5,
-                       label=f"Aleatorio ≈ {pr_baseline:.2f}")
+            # En el PR-AUC el azar da la prevalencia de la discrepancia, que cambia con
+            # cada condición: se marca sobre cada barra.
+            for i, k in enumerate(keys):
+                ax.hlines(auc_results[k]["target_0_pct"], i - 0.35, i + 0.35, color="black",
+                          linestyle="--", lw=1.2, label="Azar (prevalencia de cada caso)" if i == 0 else None)
 
         for bar, val in zip(bars, vals):
             ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.003,
-                    f"{val:.3f}", ha="center", va="bottom", fontsize=9)
+                    num(val, 3), ha="center", va="bottom", fontsize=9)
 
         ax.set_xticks(x)
         ax.set_xticklabels(list(labels.values()), fontsize=9)
@@ -326,15 +330,15 @@ def figura_coef_heatmap(tabla_coef: pd.DataFrame, n_top: int = 12) -> plt.Figure
     for i, f in enumerate(top.index):
         for j, y in enumerate(anios):
             v = float(top.loc[f, y])
-            ax.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=8,
+            ax.text(j, i, num(0.0 if abs(v) < 0.005 else v, 2), ha="center", va="center", fontsize=8,
                     color="white" if abs(v) > vmax * 0.6 else "black")
 
     if exp_idx and otras_idx:
         ax.axhline(len(exp_idx) - 0.5, color="black", lw=1.2)
     plt.colorbar(im, ax=ax, label="β estandarizado (positivo: menos discrepancia)")
     ax.set_title(
-        f"Coeficientes de la regresión logística por año: las {len(top)} variables con mayor cambio\n"
-        "† = cambia de signo entre años. Bloque superior: experiencia (variables muy correlacionadas entre sí)",
+        f"Coeficientes de la regresión logística por año: las {len(top)} variables con mayor diferencia entre años\n"
+        "† = cambia de signo. Arriba, las dos variables de experiencia (muy correlacionadas)",
         fontsize=10,
     )
     fig.tight_layout()
@@ -351,6 +355,7 @@ def figura_shap_por_anio(shap_results: dict[int, pd.Series], n_top: int = 15) ->
         ax.set_yticks(range(len(top)))
         ax.set_yticklabels([nombre_legible(t) for t in top.index], fontsize=9)
         ax.set_xlabel("SHAP medio absoluto")
+        ax.xaxis.set_major_locator(MaxNLocator(4))
         ax.set_title(f"{n_top} variables principales, {year}")
         ax.grid(axis="x", linestyle="--", alpha=0.3)
 
@@ -412,69 +417,41 @@ def figura_validacion_temporal(
     auc_forward: dict,
     auc_pooled_sin: float,
 ) -> plt.Figure:
-    """Figura resumen: AUC dentro del año, hacia adelante y con los años juntos."""
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    """Pérdida de ROC-AUC al aplicar un modelo de años previos a un año posterior.
 
-    within_keys = ["within_2023", "within_2024", "within_2025"]
-    forward_keys = ["fwd_23_24", "fwd_24_25", "fwd_2324_25"]
-
-    within_labels = ["Dentro del\naño 2023", "Dentro del\naño 2024", "Dentro del\naño 2025"]
-    forward_labels = [
-        "De 2023\na 2024",
-        "De 2024\na 2025",
-        "De 2023+24\na 2025",
+    Para cada año de prueba compara el modelo entrenado en ese mismo año con el entrenado
+    en años anteriores, e indica la diferencia con su intervalo de confianza del 95 %.
+    """
+    pares = [
+        ("fwd_23_24", "within_2024", "Entrena en 2023,\nevalúa en 2024"),
+        ("fwd_24_25", "within_2025", "Entrena en 2024,\nevalúa en 2025"),
+        ("fwd_2324_25", "within_2025", "Entrena en 2023 y 2024,\nevalúa en 2025"),
     ]
-
-    within_colors = [COLORS_YEAR[y] for y in [2023, 2024, 2025]]
-    forward_colors = ["#ef4444", "#dc2626", "#b91c1c"]
-
-    for ax, metric, ylabel in [
-        (axes[0], "roc_auc", "ROC-AUC"),
-        (axes[1], "pr_auc", "PR-AUC (clase minoritaria)"),
-    ]:
-        w_vals = [auc_within[k][metric] for k in within_keys]
-        f_vals = [auc_forward[k][metric] for k in forward_keys if k in auc_forward]
-        f_labels = [l for k, l in zip(forward_keys, forward_labels) if k in auc_forward]
-        f_colors = [c for k, c in zip(forward_keys, forward_colors) if k in auc_forward]
-
-        n_within = len(w_vals)
-        n_forward = len(f_vals)
-        x_within = np.arange(n_within)
-        x_forward = np.arange(n_within, n_within + n_forward)
-
-        bars_w = ax.bar(x_within, w_vals, color=within_colors, width=0.6, label="Dentro del año")
-        bars_f = ax.bar(x_forward, f_vals, color=f_colors, width=0.6, label="Hacia adelante")
-
-        for bar, val in zip(list(bars_w) + list(bars_f), w_vals + f_vals):
-            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.003,
-                    f"{val:.3f}", ha="center", va="bottom", fontsize=8)
-
-        all_labels = within_labels + f_labels
-        ax.set_xticks(np.concatenate([x_within, x_forward]))
-        ax.set_xticklabels(all_labels, fontsize=9)
-        ax.axvline(n_within - 0.5, color="gray", linestyle=":", lw=1, alpha=0.5)
-
-        pooled_val = auc_within["pooled_sin_year"][metric]
-        ax.axhline(pooled_val, color=COLOR_POOLED, linestyle="--", lw=1.5,
-                   label=f"Años juntos, sin el año de la encuesta: {pooled_val:.3f}")
-
-        ax.set_ylabel(ylabel)
-        ax.set_ylim(0, max(max(w_vals), max(f_vals)) * 1.2)
-        ax.set_title(ylabel)
-        ax.legend(fontsize=8, loc="upper left")
-        ax.grid(axis="y", linestyle="--", alpha=0.3)
-
-        ax.text(n_within - 0.5, ax.get_ylim()[1] * 0.97, "│", ha="center", fontsize=14, color="gray")
-        ax.text(n_within / 2 - 0.5, ax.get_ylim()[1] * 0.93, "Dentro del año", ha="center",
-                fontsize=8, color="gray")
-        ax.text(n_within + n_forward / 2 - 0.5, ax.get_ylim()[1] * 0.93, "Hacia adelante",
-                ha="center", fontsize=8, color="#ef4444")
-
-    fig.suptitle(
-        "Validación temporal (concept drift)\n"
-        "Dentro del año: entrena y evalúa en el mismo año  ·  Hacia adelante: entrena en años pasados y evalúa en uno posterior",
-        fontsize=11,
-    )
+    pares = [p for p in pares if p[0] in auc_forward]
+    fig, ax = plt.subplots(figsize=(9, 5))
+    x = np.arange(len(pares))
+    ancho = 0.36
+    mismo = [auc_within[w]["roc_auc"] for _, w, _ in pares]
+    previo = [auc_forward[f]["roc_auc"] for f, _, _ in pares]
+    b1 = ax.bar(x - ancho / 2, mismo, ancho, color="#3b82f6", label="Modelo entrenado en el mismo año")
+    b2 = ax.bar(x + ancho / 2, previo, ancho, color="#ef4444", label="Modelo entrenado en años previos")
+    for bar, val in zip(list(b1) + list(b2), mismo + previo):
+        ax.text(bar.get_x() + bar.get_width() / 2, val + 0.002, num(val, 3), ha="center", va="bottom", fontsize=9)
+    for i, (f, _, _) in enumerate(pares):
+        dif = (previo[i] - mismo[i]) * 100
+        lo, hi = (v * 100 for v in auc_forward[f]["dif_ic"])
+        ax.text(i, max(mismo[i], previo[i]) + 0.014,
+                f"Pérdida: {num(dif)} puntos\n(IC 95 %: {num(lo)} a {num(hi)})",
+                ha="center", va="bottom", fontsize=9)
+    ax.axhline(auc_pooled_sin, color=COLOR_POOLED, linestyle="--", lw=1.2,
+               label=f"Años juntos, sin el año de la encuesta: {num(auc_pooled_sin, 3)}")
+    ax.set_xticks(x)
+    ax.set_xticklabels([p[2] for p in pares], fontsize=9)
+    ax.set_ylabel("ROC-AUC (el eje empieza en 0,5, el valor del azar)")
+    ax.set_ylim(0.5, max(mismo + previo) + 0.06)
+    ax.set_title("Validación hacia adelante: cuánto pierde un modelo entrenado con años previos")
+    ax.legend(fontsize=8, loc="upper left")
+    ax.grid(axis="y", linestyle="--", alpha=0.3)
     fig.tight_layout()
     return fig
 

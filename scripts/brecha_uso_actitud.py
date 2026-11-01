@@ -1,12 +1,12 @@
 """Brecha entre uso y actitud en toda la población (outputs/brecha_uso_actitud.png).
 
 Cruza la pregunta de uso de IA (AISelect) con la de actitud (AISent) en cuatro grupos y
-muestra la distribución global, la evolución por año y el porcentaje de usuarios sin
-actitud favorable según años programando.
+muestra la distribución global y la evolución por año.
 """
 import importlib.util
 import io
 import contextlib
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -14,6 +14,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from nombres_legibles import configurar_figuras, num  # noqa: E402
+
+configurar_figuras()
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUTS = ROOT / "outputs"
@@ -65,14 +70,14 @@ def cargar() -> pd.DataFrame:
 
 
 def figura(df: pd.DataFrame) -> plt.Figure:
-    fig, axes = plt.subplots(1, 3, figsize=(17, 5.2))
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5.2))
 
     # Distribución global
     ax = axes[0]
     dist = df["grupo"].value_counts(normalize=True).reindex(ORDEN) * 100
     barras = ax.bar(range(4), dist.values, color=[COLORES[g] for g in ORDEN])
     for b, v in zip(barras, dist.values):
-        ax.text(b.get_x() + b.get_width() / 2, v + 0.8, f"{v:.1f} %", ha="center", fontsize=10, fontweight="bold")
+        ax.text(b.get_x() + b.get_width() / 2, v + 0.8, f"{num(v)} %", ha="center", fontsize=10, fontweight="bold")
     ax.set_xticks(range(4))
     ax.set_xticklabels([g.replace(", ", ",\n").replace(" y ", " y\n").replace(" sin ", "\nsin ") for g in ORDEN], fontsize=8)
     ax.set_ylabel("% de desarrolladores profesionales")
@@ -89,27 +94,12 @@ def figura(df: pd.DataFrame) -> plt.Figure:
         ax.bar(tabla.index.astype(str), tabla[g], bottom=base, color=COLORES[g], label=g, width=0.75)
         for i, (v, b) in enumerate(zip(tabla[g], base)):
             if v > 5:
-                ax.text(i, b + v / 2, f"{v:.0f} %", ha="center", va="center", color="white", fontsize=9, fontweight="bold")
+                ax.text(i, b + v / 2, f"{num(v, 0)} %", ha="center", va="center", color="white", fontsize=9, fontweight="bold")
         base += tabla[g].values
     ax.set_ylabel("% de desarrolladores profesionales")
     ax.set_ylim(0, 100)
     ax.set_title("Evolución por año de la encuesta")
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.08), ncol=2, fontsize=8, frameon=False)
-
-    # Usuarios sin actitud favorable según años programando
-    ax = axes[2]
-    usuarios = df[df["AISelect"] == "Yes"].dropna(subset=["anios"]).copy()
-    usuarios["tramo"] = pd.cut(usuarios["anios"], [-0.1, 5, 10, 20, 100], labels=["0–5", "6–10", "11–20", "más de 20"])
-    sin_fav = (usuarios["grupo"] == ORDEN[1]).groupby(usuarios["tramo"], observed=True).mean() * 100
-    barras = ax.bar(range(len(sin_fav)), sin_fav.values, color=COLORES[ORDEN[1]])
-    for b, v in zip(barras, sin_fav.values):
-        ax.text(b.get_x() + b.get_width() / 2, v + 0.4, f"{v:.1f} %", ha="center", fontsize=10, fontweight="bold")
-    ax.set_xticks(range(len(sin_fav)))
-    ax.set_xticklabels(sin_fav.index.astype(str))
-    ax.set_xlabel("Años programando")
-    ax.set_ylabel("% de usuarios sin actitud favorable")
-    ax.set_ylim(0, 30)
-    ax.set_title("Usuarios sin actitud favorable\nsegún años programando")
 
     fig.tight_layout()
     return fig

@@ -1,4 +1,46 @@
-"""Nombres legibles en español para las variables del dataset, para usar en figuras y tablas."""
+"""Nombres legibles en español para las variables del dataset y formato numérico de las figuras."""
+
+import locale
+
+import matplotlib
+
+_ROLES = {
+    "Developer, full-stack": "Desarrollo full-stack",
+    "Developer, back-end": "Desarrollo back-end",
+    "Developer, front-end": "Desarrollo front-end",
+    "Developer, mobile": "Desarrollo móvil",
+    "Developer, desktop or enterprise applications": "Aplicaciones de escritorio o empresariales",
+    "Developer, embedded applications or devices": "Sistemas embebidos",
+    "Data scientist or machine learning specialist": "Ciencia de datos y aprendizaje automático",
+    "Engineering manager": "Gerencia de ingeniería",
+    "Data engineer": "Ingeniería de datos",
+    "DevOps specialist": "DevOps",
+    "Student": "Estudiante",
+    "Other (please specify):": "Otro (especificar)",
+    "Other": "Otro",
+}
+
+
+def nombre_rol(valor: str) -> str:
+    """Nombre en español de un valor de DevType."""
+    return _ROLES.get(valor, valor)
+
+
+def num(valor: float, decimales: int = 1) -> str:
+    """Número con coma decimal y punto de miles (formato argentino)."""
+    texto = f"{valor:,.{decimales}f}"
+    return texto.replace(",", "_").replace(".", ",").replace("_", ".").replace("-", "−")
+
+
+def configurar_figuras() -> None:
+    """Ejes de matplotlib con coma decimal. Si el sistema no tiene el locale, no cambia nada."""
+    for nombre in ("es_AR.UTF-8", "es_AR.utf8", "es_ES.UTF-8", "es_ES.utf8"):
+        try:
+            locale.setlocale(locale.LC_NUMERIC, nombre)
+        except locale.Error:
+            continue
+        matplotlib.rcParams["axes.formatter.use_locale"] = True
+        return
 
 _FIJOS = {
     "survey_year": "Año de la encuesta",
@@ -13,8 +55,8 @@ _FIJOS = {
     "Employment_Employed": "Empleo: en relación de dependencia",
     "Employment_Freelance": "Empleo: independiente",
     "Employment_Other": "Empleo: otro",
-    "ICorPM_Individual contributor": "Rol: contribuidor individual",
-    "ICorPM_People manager": "Rol: gestiona personas",
+    "ICorPM_Individual contributor": "Posición: contribuidor individual",
+    "ICorPM_People manager": "Posición: gestiona personas",
     "Region_ASIA": "Región: Asia",
     "Region_EU": "Región: Europa",
     "Region_LATAM": "Región: Latinoamérica",
@@ -65,6 +107,8 @@ def nombre_legible(variable: str) -> str:
         if valor.startswith("Hybrid"):
             return "Modalidad: híbrido"
         return "Modalidad: a elección"
+    if variable.startswith("DevType_"):
+        return f"Rol: {nombre_rol(variable[len('DevType_'):])}"
     for prefijo, etiqueta in _PREFIJOS.items():
         if variable.startswith(prefijo):
             valor = variable[len(prefijo):].replace("_", " ").strip(": ")

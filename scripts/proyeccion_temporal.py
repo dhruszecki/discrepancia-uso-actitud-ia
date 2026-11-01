@@ -36,7 +36,7 @@ AUC_INTRA = np.array([_res[f"within_{y}"]["roc_auc"] for y in (2023, 2024, 2025)
 SCENARIOS = [
     ("Techo 30 % — saturando",  0.30, "#16a34a", "-"),
     ("Techo 45 % — moderado",   0.45, "#f59e0b", "--"),
-    ("Techo 70 % — alto",       0.70, "#dc2626", ":"),
+    ("Techo 70 % — alto",       0.70, "#6b7280", ":"),
 ]
 
 years_plot = np.linspace(2022.5, 2027.5, 400)
@@ -83,14 +83,14 @@ for label, L, color, ls in SCENARIOS:
 vals = list(proj_vals.values())
 if len(vals) >= 2:
     lo, hi = min(vals), max(vals)
-    ax.axvspan(2025.6, 2026.4, alpha=0.09, color="gray",
-               label=f"Rango 2026: {_c(lo*100, 1)} %–{_c(hi*100, 1)} %")
+    ax.fill_between([2025.6, 2026.4], [lo * 100] * 2, [hi * 100] * 2, alpha=0.15, color="gray",
+                    label=f"Rango 2026: {_c(lo*100, 1)} %–{_c(hi*100, 1)} %")
 
 ax.scatter(YEARS, TASA_BASE * 100, color="black", s=110, zorder=10,
            label="Observado")
 for yr, v in zip(YEARS, TASA_BASE):
     ax.annotate(f"{_c(v*100, 1)} %", (yr, v * 100),
-                textcoords="offset points", xytext=(7, 6), fontsize=9)
+                textcoords="offset points", xytext=(-8, 8), ha="right", fontsize=9)
 
 ax.axvline(2025.5, color="gray", ls=":", lw=1)
 ax.text(2025.65, 3, "proyección", color="gray", fontsize=8)
@@ -134,7 +134,7 @@ ax.fill_between(
 ax.scatter(YEARS, AUC_INTRA, color="black", s=110, zorder=10, label="Observado")
 for yr, v in zip(YEARS, AUC_INTRA):
     ax.annotate(f"{_c(v, 3)}", (yr, v),
-                textcoords="offset points", xytext=(7, 6), fontsize=9)
+                textcoords="offset points", xytext=(-8, 8), ha="right", fontsize=9)
 
 ax.axvline(2025.5, color="gray", ls=":", lw=1)
 ax.text(2025.65, 0.503, "proyección", color="gray", fontsize=8)

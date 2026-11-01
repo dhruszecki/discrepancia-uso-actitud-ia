@@ -7,6 +7,7 @@ temporal_rol.png, y el informe docs/analisis/resultados_temporal_usuarios.md.
 """
 from __future__ import annotations
 
+import sys
 import warnings
 from pathlib import Path
 
@@ -16,7 +17,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from nombres_legibles import configurar_figuras, nombre_rol  # noqa: E402
+
 warnings.filterwarnings("ignore")
+configurar_figuras()
 
 TARGET_LABEL_0 = "Con discrepancia uso-actitud"
 COLOR_GLOBAL = "#1f2937"
@@ -81,7 +86,7 @@ def tasa_base_por_anio(df: pd.DataFrame) -> tuple[pd.DataFrame, plt.Figure]:
     ax.set_xticks(x)
     ax.set_xticklabels([str(y) for y in years], fontsize=11)
     ax.set_xlabel("Año de la encuesta")
-    ax.set_ylabel(f"% {TARGET_LABEL_0}")
+    ax.set_ylabel("% con discrepancia")
     ax.set_ylim(0, tabla["tasa_pct"].max() * 1.4)
     ax.set_title(
         f"Tasa de discrepancia por año de la encuesta\n(usuarios de IA, N = {_num(len(df))})"
@@ -129,10 +134,17 @@ def h1_temporal_usuarios(df: pd.DataFrame) -> tuple[pd.DataFrame, plt.Figure]:
         if col in tabla.columns:
             ax.plot(x, tabla[col], "-o", color=COLORS_YEAR[year], lw=2, ms=6, label=col)
 
+    # El tramo con menos experiencia de 2025 es chico: se indica su N.
+    n_2025 = df[df["survey_year"] == 2025].groupby("exp_tramo", observed=True).size()
+    primero = tabla.index[0]
+    if "2025" in tabla.columns and n_2025.get(primero, 0) < 500:
+        ax.annotate(f"2025: N = {_num(n_2025[primero])}", (0, tabla.loc[primero, "2025"]),
+                    xytext=(10, 0), textcoords="offset points", va="center", fontsize=8, color=COLORS_YEAR[2025])
+
     ax.set_xticks(x)
     ax.set_xticklabels(tabla.index)
     ax.set_xlabel("Años programando")
-    ax.set_ylabel(f"% {TARGET_LABEL_0}")
+    ax.set_ylabel("% con discrepancia")
     ax.set_ylim(0, tabla.max().max() * 1.25)
     ax.set_title("Discrepancia según años programando, por año de la encuesta\n(usuarios de IA)")
     ax.legend(title="", loc="upper left", fontsize=9)
@@ -173,7 +185,7 @@ def h2_temporal_usuarios(df: pd.DataFrame) -> tuple[pd.DataFrame, plt.Figure]:
     # Algunos roles no existen en las tres ediciones; se marcan con asterisco.
     year_exclusive = [dt for dt in tabla.index if years_ok.get(dt, 0) < 3]
     ytick_labels = [
-        f"{dt[:38]}*" if dt in year_exclusive else dt[:42]
+        f"{nombre_rol(dt)}*" if dt in year_exclusive else nombre_rol(dt)
         for dt in tabla.index
     ]
 
@@ -189,15 +201,16 @@ def h2_temporal_usuarios(df: pd.DataFrame) -> tuple[pd.DataFrame, plt.Figure]:
 
     for year in [2023, 2024, 2025]:
         global_year = df.loc[df["survey_year"] == year, "discrepancia"].mean() * 100
-        ax.axvline(global_year, color=COLORS_YEAR[year], linestyle=":", lw=1.2, alpha=0.6)
+        ax.axvline(global_year, color=COLORS_YEAR[year], linestyle=":", lw=1.2, alpha=0.6,
+                   label="Media de cada año (punteada)" if year == 2023 else None)
 
     ax.set_yticks(y)
     ax.set_yticklabels(ytick_labels, fontsize=9)
-    ax.set_xlabel(f"% {TARGET_LABEL_0}")
+    ax.set_xlabel("% con discrepancia")
     ax.set_title(
         f"Discrepancia por rol y año de la encuesta (usuarios de IA, N = {_num(len(df))})"
     )
-    ax.legend(title="Año", loc="lower right", fontsize=9)
+    ax.legend(loc="lower right", fontsize=9)
     ax.grid(axis="x", linestyle="--", alpha=0.3)
 
     fig.tight_layout()
