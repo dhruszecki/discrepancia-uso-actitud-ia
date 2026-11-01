@@ -56,6 +56,22 @@ pyproject.toml, uv.lock   dependencias con versiones fijas
 - Python 3.11
 - [uv](https://docs.astral.sh/uv/) para instalar las dependencias (también sirve `pip` con las versiones de `uv.lock`)
 
+Los resultados se generaron con estas versiones de las bibliotecas principales:
+
+| Biblioteca | Versión |
+|---|---|
+| Python | 3.11.13 |
+| pandas | 3.0.1 |
+| numpy | 2.4.3 |
+| scikit-learn | 1.8.0 |
+| xgboost | 3.2.0 |
+| shap | 0.51.0 |
+| matplotlib | 3.10.8 |
+| seaborn | 0.13.2 |
+| pyarrow | 23.0.1 |
+
+`uv.lock` fija además las versiones de todas las dependencias indirectas.
+
 ## Paso a paso
 
 ### 1. Instalar las dependencias
