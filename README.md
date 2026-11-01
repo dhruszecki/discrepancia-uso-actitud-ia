@@ -47,6 +47,8 @@ pyproject.toml, uv.lock   dependencias con versiones fijas
 | `decision_drop_auc.py` | Misma regresión logística sobre todos los desarrolladores y sobre los usuarios de IA. |
 | `sensibilidad_target.py` | Resultado con otras definiciones de la clase con discrepancia. |
 | `sensibilidad_faltantes.py` | Resultado con indicadores de falta de respuesta y solo con quienes respondieron la pregunta de entornos. |
+| `validacion_constructo.py` | Validez convergente: confianza en la precisión de la IA según la clase y la actitud declarada. |
+| `robustez_modelo.py` | Estabilidad del orden de los valores SHAP en distintas muestras y calibración del random forest. |
 | `modelado_temporal.py` | Modelos dentro de cada año, modelo con solo el año, validación hacia adelante e intervalos de confianza del AUC. |
 | `proyeccion_temporal.py` | Escenarios ilustrativos para 2026. |
 | `contraste_2026.py` | Contraste con la edición 2026, que cambió las preguntas de uso y actitud: tasa de discrepancia con una definición equivalente, experiencia y rol. |
@@ -123,6 +125,8 @@ uv run python scripts/modelado.py
 uv run python scripts/decision_drop_auc.py
 uv run python scripts/sensibilidad_target.py
 uv run python scripts/sensibilidad_faltantes.py
+uv run python scripts/validacion_constructo.py
+uv run python scripts/robustez_modelo.py
 uv run python scripts/modelado_temporal.py
 uv run python scripts/proyeccion_temporal.py
 uv run python scripts/contraste_2026.py
