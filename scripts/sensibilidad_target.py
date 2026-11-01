@@ -43,6 +43,7 @@ VARIANTES = {
     "solo negativos activos": dict(keep=FAV | NEG, disc=NEG),
     "sin Unsure": dict(keep=FAV | NEG | IND, disc=NEG | IND),
     "negativos + Unsure": dict(keep=FAV | NEG | UNS, disc=NEG | UNS),
+    "solo indiferencia": dict(keep=FAV | IND, disc=IND),
 }
 
 
